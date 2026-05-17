@@ -39,6 +39,13 @@ async def amain():
     log = logging.getLogger(__name__)
 
     config = load_config()
+    log.info(
+        "Loaded config: enrichment=%s | analyst=%s | email_to=%s | window=%sh",
+        config["llm"]["enrichment_model"],
+        config["llm"]["analyst_model"],
+        config["delivery"]["email_to"],
+        config["delivery"]["digest_window_hours"],
+    )
     db_path = Path("data/items.db")
     db_path.parent.mkdir(exist_ok=True)
     engine = get_engine(db_path)

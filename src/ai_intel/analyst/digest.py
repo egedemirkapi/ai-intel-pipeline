@@ -79,6 +79,7 @@ async def generate_digest(
             "items_considered": len(items),
         }
 
+    logger.info(f"Calling analyst model: {model} with {len(payload)} items")
     try:
         resp = client.messages.create(
             model=model,
@@ -87,14 +88,14 @@ async def generate_digest(
             messages=[{"role": "user", "content": f"Items to rank:\n{json.dumps(payload)}"}],
         )
     except anthropic.RateLimitError as e:
-        logger.error(f"Opus rate-limited (429): {e}")
-        return _prescore_fallback("Opus rate-limited (429)")
+        logger.error(f"Analyst model {model} rate-limited (429): {e}")
+        return _prescore_fallback(f"analyst model {model} rate-limited (429)")
     except anthropic.APIError as e:
-        logger.error(f"Opus API error: {e}")
-        return _prescore_fallback(f"Opus API error ({type(e).__name__})")
+        logger.error(f"Analyst model {model} API error: {e}")
+        return _prescore_fallback(f"analyst model {model} API error ({type(e).__name__})")
     except Exception as e:
-        logger.exception(f"Unexpected Opus failure: {e}")
-        return _prescore_fallback(f"unexpected Opus failure ({type(e).__name__})")
+        logger.exception(f"Unexpected analyst failure ({model}): {e}")
+        return _prescore_fallback(f"unexpected analyst failure with {model} ({type(e).__name__})")
 
     raw_text = resp.content[0].text
     try:
