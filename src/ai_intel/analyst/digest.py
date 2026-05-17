@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+import anthropic
 from sqlmodel import Session, select
 
 from ai_intel.db.models import Item
@@ -67,27 +68,40 @@ async def generate_digest(
     client = get_anthropic_client()
     system_prompt = _load_prompt()
 
-    resp = client.messages.create(
-        model=model,
-        max_tokens=8192,
-        system=system_prompt,
-        messages=[{"role": "user", "content": f"Items to rank:\n{json.dumps(payload)}"}],
-    )
-
-    raw_text = resp.content[0].text
-    try:
-        parsed = json.loads(raw_text)
-    except json.JSONDecodeError as e:
-        logger.error(f"Opus returned non-JSON: {e}\nRaw: {raw_text[:1000]}")
+    def _prescore_fallback(reason: str) -> dict:
         sorted_items = sorted(items, key=lambda x: x.pre_score or 0, reverse=True)[:top_n]
         return {
-            "summary": "Limited analysis — Opus output unparseable, fell back to pre-score ranking.",
+            "summary": f"Limited analysis — {reason}. Fell back to pre-score ranking from Haiku enrichment.",
             "top_items": [
                 {"item_id": i.id, "rank": idx + 1, "why_it_matters": ""}
                 for idx, i in enumerate(sorted_items)
             ],
             "items_considered": len(items),
         }
+
+    try:
+        resp = client.messages.create(
+            model=model,
+            max_tokens=8192,
+            system=system_prompt,
+            messages=[{"role": "user", "content": f"Items to rank:\n{json.dumps(payload)}"}],
+        )
+    except anthropic.RateLimitError as e:
+        logger.error(f"Opus rate-limited (429): {e}")
+        return _prescore_fallback("Opus rate-limited (429)")
+    except anthropic.APIError as e:
+        logger.error(f"Opus API error: {e}")
+        return _prescore_fallback(f"Opus API error ({type(e).__name__})")
+    except Exception as e:
+        logger.exception(f"Unexpected Opus failure: {e}")
+        return _prescore_fallback(f"unexpected Opus failure ({type(e).__name__})")
+
+    raw_text = resp.content[0].text
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"Opus returned non-JSON: {e}\nRaw: {raw_text[:1000]}")
+        return _prescore_fallback("Opus output unparseable")
 
     # Step 3: Validate — strip hallucinated and out-of-window items
     # Build lookup keyed by id for items that passed the SQL filter
