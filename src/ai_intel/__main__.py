@@ -46,6 +46,18 @@ async def amain():
         config["delivery"]["email_to"],
         config["delivery"]["digest_window_hours"],
     )
+
+    # Diagnostic: confirm API key was loaded correctly (only first 14 chars shown)
+    import os as _os
+    ak = _os.getenv("ANTHROPIC_API_KEY", "")
+    rk = _os.getenv("RESEND_API_KEY", "")
+    log.info(
+        "Loaded keys: ANTHROPIC_API_KEY=%s... (len=%d) | RESEND_API_KEY=%s... (len=%d)",
+        ak[:14] if ak else "<UNSET>",
+        len(ak),
+        rk[:6] if rk else "<UNSET>",
+        len(rk),
+    )
     db_path = Path("data/items.db")
     db_path.parent.mkdir(exist_ok=True)
     engine = get_engine(db_path)

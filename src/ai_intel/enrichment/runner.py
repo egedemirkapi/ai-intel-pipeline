@@ -1,6 +1,7 @@
 import json
 import logging
 
+import anthropic
 from sqlmodel import Session, select
 
 from ai_intel.db.models import Item
@@ -27,6 +28,13 @@ async def enrich_new_items(engine, model: str, batch_size: int = 10) -> int:
         batch = unenriched[i : i + batch_size]
         try:
             results = await enrich_batch(batch, client=client, model=model)
+        except anthropic.AuthenticationError as e:
+            # Don't waste 40+ calls hitting the same 401 — bail immediately
+            logger.error(
+                f"Enrichment auth failed (401): {e}. "
+                "Bailing out — fix ANTHROPIC_API_KEY in .env and restart."
+            )
+            return total
         except Exception as e:
             logger.error(f"Enrich batch failed: {e}")
             continue
