@@ -138,6 +138,10 @@ ANTHROPIC_API_KEY=sk-ant-oat-...
 # Resend API key from resend.com dashboard
 RESEND_API_KEY=re_...
 
+# Product Hunt API token (optional — if unset, PH collector is skipped)
+# Get from: https://api.producthunt.com/v2/oauth/applications
+PRODUCT_HUNT_TOKEN=
+
 # Override config defaults (optional)
 EMAIL_TO=egedemirkapi@gmail.com
 LOG_LEVEL=INFO
@@ -1896,7 +1900,7 @@ def test_groups_by_classification(tmp_path: Path):
 - [ ] **Step 3:** Write `src/ai_intel/pdf/sections.py`:
 
 ```python
-from sqlmodel import Session
+from sqlmodel import Session, select
 from ai_intel.db.models import Item
 
 SECTION_ORDER = ["Funding", "Launches", "Research", "Viral", "Hires", "Misc"]
@@ -1915,7 +1919,9 @@ def build_sections(engine, top_items: list[dict]) -> dict:
     if not item_ids:
         return {}
     with Session(engine) as s:
-        items_by_id = {i.id: i for i in s.query(Item).filter(Item.id.in_(item_ids)).all()}
+        items_by_id = {
+            i.id: i for i in s.exec(select(Item).where(Item.id.in_(item_ids))).all()
+        }
 
     out: dict[str, list[dict]] = {name: [] for name in SECTION_ORDER}
     for t in top_items:
