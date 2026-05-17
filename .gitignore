@@ -1,0 +1,38 @@
+# Secrets
+.env
+.env.local
+*.key
+
+# Data + output
+data/items.db
+data/items.db-journal
+data/items.db-wal
+data/items.db-shm
+output/*.pdf
+output/failed/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local logs
+*.log
