@@ -1,5 +1,6 @@
 # src/ai_intel/pipeline.py
 import asyncio
+import html
 import logging
 from datetime import datetime, timezone, timedelta
 from functools import partial
@@ -14,6 +15,67 @@ from ai_intel.pdf.render import render_digest_pdf
 from ai_intel.pdf.sections import build_sections
 
 logger = logging.getLogger(__name__)
+
+
+def _build_email_html(digest_data: dict) -> str:
+    """Build a rich HTML email body containing the full digest inline.
+
+    Gmail often strips or rejects PDF attachments (especially when content mentions
+    security-sensitive terms). Embedding the digest in the body guarantees Ege sees
+    the content even when the PDF gets stripped.
+    """
+    e = html.escape  # shorthand
+
+    sections_html = []
+    for section_name, items in digest_data["sections"].items():
+        sections_html.append(
+            f'<h2 style="font-size:16px;margin:24px 0 8px;color:#555;'
+            f'text-transform:uppercase;letter-spacing:0.05em;'
+            f'border-bottom:1px solid #ddd;padding-bottom:4px;">'
+            f'{e(section_name)} ({len(items)})</h2>'
+        )
+        for entry in items:
+            why = entry.get("why_it_matters", "")
+            sections_html.append(
+                f'<div style="margin:12px 0 16px;padding-bottom:10px;'
+                f'border-bottom:1px solid #f0f0f0;">'
+                f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
+                f'<a href="{e(entry["url"])}" style="color:#0066cc;text-decoration:none;">'
+                f'{e(entry["title"])}</a></div>'
+                f'<div style="font-size:11px;color:#888;margin-top:2px;">'
+                f'{e(entry["source"])} · {e(str(entry["published_at"]))}</div>'
+                + (f'<div style="font-size:13px;color:#333;margin-top:6px;'
+                   f'line-height:1.5;">{e(why)}</div>' if why else "")
+                + '</div>'
+            )
+
+    return f'''
+    <html>
+    <body style="font-family:-apple-system,'Segoe UI',sans-serif;
+                 color:#1a1a1a;line-height:1.5;max-width:680px;
+                 margin:0 auto;padding:24px;">
+      <h1 style="font-size:24px;border-bottom:2px solid #000;
+                 padding-bottom:8px;margin:0 0 8px;">AI Intel Digest</h1>
+      <div style="font-size:11px;color:#888;margin-bottom:16px;">
+        Generated {e(digest_data["window_end"])} ·
+        {digest_data["items_considered"]} items considered ·
+        {digest_data["items_selected"]} selected ·
+        window {e(digest_data["window_start"])} → {e(digest_data["window_end"])}
+      </div>
+      <div style="background:#f6f6f6;padding:14px 18px;
+                  border-left:4px solid #4a4a4a;margin:16px 0 24px;
+                  font-style:italic;line-height:1.6;">
+        {e(digest_data["summary"])}
+      </div>
+      {"".join(sections_html)}
+      <hr style="margin:32px 0 16px;border:none;border-top:1px solid #eee;">
+      <div style="font-size:11px;color:#aaa;">
+        PDF version attached. Full digest also embedded above so you can read
+        without opening the attachment.
+      </div>
+    </body>
+    </html>
+    '''
 
 
 async def generate_and_send_digest(
@@ -51,7 +113,7 @@ async def generate_and_send_digest(
     await loop.run_in_executor(None, partial(render_digest_pdf, digest_data, output_path=pdf_path))
 
     subject = f"AI Intel · {now.strftime('%Y-%m-%d %H:%M')} · {len(digest['top_items'])} items"
-    body_html = f"<p>{digest['summary']}</p><p>PDF attached.</p>"
+    body_html = _build_email_html(digest_data)
     try:
         msg_id = send_digest_email(
             to=email_to, subject=subject, body_html=body_html, pdf_path=pdf_path,
