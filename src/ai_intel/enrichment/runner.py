@@ -37,6 +37,8 @@ async def enrich_new_items(engine, model: str, batch_size: int = 10) -> int:
                 if not r:
                     continue
                 db_item = session.get(Item, item.id)
+                if db_item is None:
+                    continue
                 db_item.classification = r.get("classification")
                 db_item.ai_relevance = r.get("ai_relevance")
                 db_item.entities_json = json.dumps(r.get("entities", {}))
