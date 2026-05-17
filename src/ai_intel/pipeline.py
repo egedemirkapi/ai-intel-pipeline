@@ -52,9 +52,20 @@ async def generate_and_send_digest(
 
     subject = f"AI Intel · {now.strftime('%Y-%m-%d %H:%M')} · {len(digest['top_items'])} items"
     body_html = f"<p>{digest['summary']}</p><p>PDF attached.</p>"
-    msg_id = send_digest_email(
-        to=email_to, subject=subject, body_html=body_html, pdf_path=pdf_path,
-    )
+    try:
+        msg_id = send_digest_email(
+            to=email_to, subject=subject, body_html=body_html, pdf_path=pdf_path,
+        )
+    except Exception as e:
+        # Don't crash the scheduler on transient email failures (Resend sandbox
+        # restrictions, rate limits, network blips). PDF is preserved on disk so
+        # the user can re-send manually, and items stay unmarked so the next
+        # cycle can retry.
+        logger.error(
+            f"Email send failed ({type(e).__name__}): {e}. "
+            f"PDF preserved at {pdf_path}; items NOT marked as sent."
+        )
+        return {"sent": False, "reason": "email_failed", "error": str(e), "pdf_path": str(pdf_path)}
 
     # Mark items as sent + record the digest
     # Intentionally placed AFTER email send — if email fails, we don't claim items were sent
