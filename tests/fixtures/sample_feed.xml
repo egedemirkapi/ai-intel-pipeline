@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <title>Sample</title>
+  <item>
+    <title>Anthropic announces new model</title>
+    <link>https://example.com/1</link>
+    <pubDate>Mon, 17 May 2026 10:00:00 +0000</pubDate>
+    <description>An AI breakthrough.</description>
+  </item>
+  <item>
+    <title>Generic tech news</title>
+    <link>https://example.com/2</link>
+    <pubDate>Mon, 17 May 2026 11:00:00 +0000</pubDate>
+    <description>Not AI related.</description>
+  </item>
+</channel>
+</rss>

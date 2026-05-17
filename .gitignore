@@ -8,6 +8,7 @@ data/items.db
 data/items.db-journal
 data/items.db-wal
 data/items.db-shm
+data/.started
 output/*.pdf
 output/failed/
 

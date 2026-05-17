@@ -1,0 +1,43 @@
+[project]
+name = "ai-intel-pipeline"
+version = "0.1.0"
+description = "Multi-agent AI ecosystem monitor — 2h PDF digest"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "apscheduler>=3.10.0",
+    "beautifulsoup4>=4.12.0",
+    "fastapi>=0.110.0",
+    "feedparser>=6.0.10",
+    "httpx>=0.27.0",
+    "jinja2>=3.1.0",
+    "pydantic>=2.6.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+    "resend>=2.0.0",
+    "sqlmodel>=0.0.16",
+    "uvicorn>=0.27.0",
+    "playwright>=1.40.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-httpx>=0.30.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+ai-intel = "ai_intel.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
