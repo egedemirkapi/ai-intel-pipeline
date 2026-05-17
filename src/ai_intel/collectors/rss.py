@@ -22,8 +22,12 @@ class RSSCollector(Collector):
 
     async def fetch_since(self, since: datetime) -> list[RawItem]:
         results: list[RawItem] = []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; AI-Intel-Pipeline/0.1; +https://github.com/egedemirkapi/ai-intel-pipeline)",
+            "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+        }
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True, headers=headers) as client:
                 resp = await client.get(self.feed_url)
                 resp.raise_for_status()
                 content = resp.content

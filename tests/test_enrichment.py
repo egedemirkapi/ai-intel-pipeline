@@ -55,3 +55,22 @@ async def test_enrich_batch_returns_empty_on_malformed_json():
 
     enriched = await enrich_batch(items, client=fake_client, model="m")
     assert enriched == {}
+
+
+@pytest.mark.asyncio
+async def test_enrich_batch_strips_markdown_fences():
+    """Regression: Haiku sometimes wraps JSON in ```json ... ``` fences."""
+    items = [make_item("Anthropic ships X", 1)]
+    inner_json = json.dumps([
+        {"item_id": 1, "classification": "launch", "ai_relevance": 0.9,
+         "entities": {}, "pre_score": 8, "skip_reason": None},
+    ])
+    fenced = f"```json\n{inner_json}\n```"
+    fake_response = MagicMock()
+    fake_response.content = [MagicMock(text=fenced)]
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_response
+
+    enriched = await enrich_batch(items, client=fake_client, model="m")
+    assert enriched[1]["classification"] == "launch"
+    assert enriched[1]["ai_relevance"] == 0.9
