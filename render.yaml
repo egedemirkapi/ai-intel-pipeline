@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: ai-intel-pipeline
+    runtime: python
+    region: oregon
+    plan: starter  # $7/mo — Free tier sleeps after inactivity
+    buildCommand: pip install -e . && playwright install chromium
+    startCommand: python -m ai_intel
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false  # set in Render dashboard
+      - key: RESEND_API_KEY
+        sync: false
+      - key: PRODUCT_HUNT_TOKEN
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+    disk:
+      name: data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
