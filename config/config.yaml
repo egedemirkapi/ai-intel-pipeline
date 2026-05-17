@@ -5,7 +5,11 @@ delivery:
 
 llm:
   enrichment_model: claude-haiku-4-5-20251001
-  analyst_model: claude-opus-4-7
+  # Sonnet 4.6 as analyst (not Opus) — MAX plan Opus quota is shared with
+  # Claude Code chat sessions and 429s constantly when both are active.
+  # Sonnet limits are far more generous and the ranking/explanation task
+  # quality is nearly identical for this use case.
+  analyst_model: claude-sonnet-4-6
   auth_mode: oauth_setup_token
 
 scoring:
