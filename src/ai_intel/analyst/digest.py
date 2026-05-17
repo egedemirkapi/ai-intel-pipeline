@@ -7,6 +7,7 @@ import anthropic
 from sqlmodel import Session, select
 
 from ai_intel.db.models import Item
+from ai_intel.enrichment.enrich import _strip_markdown_fences
 from ai_intel.llm import get_anthropic_client
 
 logger = logging.getLogger(__name__)
@@ -98,11 +99,12 @@ async def generate_digest(
         return _prescore_fallback(f"unexpected analyst failure with {model} ({type(e).__name__})")
 
     raw_text = resp.content[0].text
+    cleaned = _strip_markdown_fences(raw_text)
     try:
-        parsed = json.loads(raw_text)
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        logger.error(f"Opus returned non-JSON: {e}\nRaw: {raw_text[:1000]}")
-        return _prescore_fallback("Opus output unparseable")
+        logger.error(f"Analyst {model} returned non-JSON: {e}\nRaw: {raw_text[:1000]}")
+        return _prescore_fallback(f"analyst {model} output unparseable")
 
     # Step 3: Validate — strip hallucinated and out-of-window items
     # Build lookup keyed by id for items that passed the SQL filter

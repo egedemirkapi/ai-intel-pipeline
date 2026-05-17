@@ -8,8 +8,17 @@ from ai_intel.collectors.hn import HackerNewsCollector
 
 @pytest.mark.asyncio
 async def test_hn_filters_ai_titles(httpx_mock: HTTPXMock):
+    # Collector now fetches top + best + new, then unions IDs (dedups). Mock all 3.
     httpx_mock.add_response(
         url="https://hacker-news.firebaseio.com/v0/topstories.json",
+        json=[1, 2, 3],
+    )
+    httpx_mock.add_response(
+        url="https://hacker-news.firebaseio.com/v0/beststories.json",
+        json=[1, 2, 3],
+    )
+    httpx_mock.add_response(
+        url="https://hacker-news.firebaseio.com/v0/newstories.json",
         json=[1, 2, 3],
     )
     now_ts = int(datetime.now(timezone.utc).timestamp())

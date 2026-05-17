@@ -8,41 +8,40 @@ from ai_intel.collectors.base import Collector, RawItem
 logger = logging.getLogger(__name__)
 
 AI_KEYWORDS = {
-    "ai",
-    "ml",
-    "llm",
-    "agent",
-    "anthropic",
-    "openai",
-    "claude",
-    "gpt",
-    "gemini",
-    "transformer",
-    "deepseek",
-    "mistral",
-    "meta-llama",
-    "llama",
-    "rag",
-    "embedding",
-    "fine-tun",
-    "diffusion",
-    "neural",
-    "deep learning",
-    "machine learning",
-    "artificial intelligence",
-    "copilot",
-    "cursor",
-    "perplexity",
-    "groq",
-    "cerebras",
-    "huggingface",
-    "langchain",
-    "vector db",
+    # Core AI/ML terms
+    "ai", "ml", "llm", "agent", "agents", "ai-",
+    # Labs + products
+    "anthropic", "claude", "openai", "gpt", "chatgpt", "sora",
+    "gemini", "google deepmind", "deepmind",
+    "deepseek", "mistral", "meta-llama", "llama", "qwen", "yi-", "kimi",
+    "grok", "xai", "x.ai",
+    "stability", "stable diffusion", "midjourney", "runway",
+    "huggingface", "hugging face",
+    # Concepts
+    "transformer", "rag", "embedding", "fine-tun", "diffusion",
+    "neural", "deep learning", "machine learning", "artificial intelligence",
+    "reasoning model", "chain-of-thought", "cot ",
+    "multimodal", "vision-language", "vlm ",
+    "agentic", "tool use", "tool-use", "agent infra",
+    # AI startups / products / dev tools
+    "copilot", "cursor", "perplexity", "groq", "cerebras", "langchain",
+    "vector db", "vector database", "llamaindex", "ollama",
+    "windsurf", "replit agent", "devin", "bolt.new", "v0.dev",
+    "browserbase", "phidata", "crewai", "autogen",
+    # Funding / scaling signals (any tech news with these likely relevant)
+    "raised $", "series a", "series b", "series c", "valued at",
+    "yc s2", "yc w2", "yc x", "ycombinator",
+    "h100", "h200", "b100", "b200", "tpu",
+    # Other relevant
+    "rlhf", "alignment", "agi", "asi", "superintelligence",
+    "code generation", "code-gen", "coding agent",
 }
 
 HN_BASE = "https://hacker-news.firebaseio.com/v0"
 TOP_STORIES_URL = f"{HN_BASE}/topstories.json"
-MAX_IDS = 100
+NEW_STORIES_URL = f"{HN_BASE}/newstories.json"
+BEST_STORIES_URL = f"{HN_BASE}/beststories.json"
+MAX_IDS = 200  # was 100 — wider net for AI items
 
 
 def _is_ai_relevant(text: str) -> bool:
@@ -56,15 +55,25 @@ class HackerNewsCollector(Collector):
     async def fetch_since(self, since: datetime) -> list[RawItem]:
         results: list[RawItem] = []
         async with httpx.AsyncClient(timeout=30) as client:
-            try:
-                resp = await client.get(TOP_STORIES_URL)
-                resp.raise_for_status()
-                story_ids: list[int] = resp.json()[:MAX_IDS]
-            except Exception as exc:
-                logger.error("HN: failed to fetch top stories: %s", exc)
+            # Pull from top, best, AND new — union them — gives us 3x the candidate pool
+            all_ids: list[int] = []
+            seen: set[int] = set()
+            for label, url in [("top", TOP_STORIES_URL), ("best", BEST_STORIES_URL), ("new", NEW_STORIES_URL)]:
+                try:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    for sid in resp.json()[:MAX_IDS]:
+                        if sid not in seen:
+                            seen.add(sid)
+                            all_ids.append(sid)
+                except Exception as exc:
+                    logger.warning("HN: failed to fetch %s stories: %s", label, exc)
+
+            if not all_ids:
+                logger.error("HN: all story lists failed")
                 return results
 
-            for story_id in story_ids:
+            for story_id in all_ids:
                 try:
                     item_url = f"{HN_BASE}/item/{story_id}.json"
                     r = await client.get(item_url)

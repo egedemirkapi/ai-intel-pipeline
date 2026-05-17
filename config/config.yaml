@@ -21,18 +21,36 @@ scoring:
 
 sources:
   enabled:
+    # Tech news + aggregators
     - hn
     - product_hunt
+    - google_news     # massive volume from 100s of publishers via search
+    # Mainstream tech RSS
     - rss_techcrunch
     - rss_verge
     - rss_venturebeat
-    # - rss_a16z       # disabled: feed URL 404s (a16z removed the public RSS)
     - rss_yc
-    # - rss_anthropic  # disabled: feed.xml 404s; revisit if Anthropic re-adds RSS
     - rss_openai
     - rss_deepmind
     - rss_stratechery
     - rss_pragmatic_engineer
     - rss_latent_space
     - rss_crunchbase
+    # AI-specific newsletters
+    - rss_simon_willison
+    - rss_bens_bites
+    - rss_import_ai
+    - rss_ai_snake_oil
+    - rss_one_useful_thing
+    # Reddit — communities discussing AI in real time
+    - reddit_machinelearning
+    - reddit_locallama
+    - reddit_singularity
+    - reddit_openai
+    - reddit_anthropic
+    - reddit_aiagents
+    # User-defined
     - watchlist
+    # Disabled (404):
+    # - rss_a16z
+    # - rss_anthropic
