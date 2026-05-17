@@ -88,6 +88,22 @@ That's it. **The first email lands in ~3 minutes** (24-hour backfill on first ru
 
 ---
 
+## ⚠️ Common gotchas (read this before you start)
+
+These are issues most first-time users hit. **Skim them now, save yourself 30 minutes.** Full fixes in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+1. **Resend free tier only sends to your own signup email.** If you sign up at resend.com with `alice@gmail.com` and put `EMAIL_TO=bob@gmail.com` in `.env`, every email will bounce with "You can only send testing emails to your own email address." Fix: use the same email for both, OR verify a domain in Resend.
+
+2. **OAuth tokens from `claude setup-token` expire after a few hours.** When you see `401 Unauthorized: invalid x-api-key`, re-run `claude setup-token` and update `.env`. For a permanent fix, get a real API key from [console.anthropic.com](https://console.anthropic.com) (~$5–10/month at this volume).
+
+3. **MAX-plan rate limits are shared.** If you run this pipeline while also using Claude Code, Sonnet/Opus will 429. The default analyst model is **Haiku 4.5** for this reason — it has the most generous limits. Upgrade to Sonnet in `config/config.yaml` if you're not using Claude Code in parallel.
+
+4. **Gmail can block emails containing security-sensitive terms** in titles (e.g. "kernel exploit"). The full digest is embedded in the email HTML body so you still see content even when Gmail strips the PDF attachment.
+
+5. **Windows users need PowerShell venv activation:** `.\.venv\Scripts\Activate.ps1` not `source .venv/Scripts/activate`.
+
+---
+
 ## How it works
 
 ```
