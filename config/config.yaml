@@ -20,9 +20,9 @@ sources:
     - rss_techcrunch
     - rss_verge
     - rss_venturebeat
-    - rss_a16z
+    # - rss_a16z       # disabled: feed URL 404s (a16z removed the public RSS)
     - rss_yc
-    - rss_anthropic
+    # - rss_anthropic  # disabled: feed.xml 404s; revisit if Anthropic re-adds RSS
     - rss_openai
     - rss_deepmind
     - rss_stratechery
