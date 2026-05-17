@@ -1,0 +1,5 @@
+# One RSS URL or domain per line. Lines starting with # are ignored.
+# Add companies, blogs, newsletters Ege specifically wants tracked.
+mindra.ai
+caretta.ai
+hockeystack.com

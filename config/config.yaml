@@ -1,0 +1,32 @@
+delivery:
+  email_to: egedemirkapi@gmail.com
+  digest_window_hours: 2
+  schedule_cron: "0 */2 * * *"
+
+llm:
+  enrichment_model: claude-haiku-4-5-20251001
+  analyst_model: claude-opus-4-7
+  auth_mode: oauth_setup_token
+
+scoring:
+  ai_relevance_threshold: 0.3
+  min_items_for_full_digest: 10
+  top_n: 50
+
+sources:
+  enabled:
+    - hn
+    - product_hunt
+    - rss_techcrunch
+    - rss_verge
+    - rss_venturebeat
+    - rss_a16z
+    - rss_yc
+    - rss_anthropic
+    - rss_openai
+    - rss_deepmind
+    - rss_stratechery
+    - rss_pragmatic_engineer
+    - rss_latent_space
+    - rss_crunchbase
+    - watchlist
