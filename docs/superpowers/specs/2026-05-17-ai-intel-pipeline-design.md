@@ -243,11 +243,13 @@ Return strict JSON: {summary, top_50: [{item_id, rank, why_it_matters}]}
 - WeasyPrint renders HTML → PDF
 - Save to `output/ai-intel-YYYY-MM-DD-HHMM.pdf`
 
-### 6. Email (`email/`)
+### 6. Email (`mailer/`)
+
+Renamed from `email/` to avoid shadowing Python's stdlib `email` module.
 
 `send_digest.py` — uses Resend SDK.
 - API key from env: `RESEND_API_KEY`
-- From: `intel@<your-domain>` (or Resend default sender if no domain yet)
+- From: `onboarding@resend.dev` (Resend's default sender — zero DNS setup for v1; migrate to `intel@evasocial.ai` later if delivery becomes an issue)
 - To: `egedemirkapi@gmail.com` (from config, overridable)
 - Subject: `AI Intel · {YYYY-MM-DD HH:MM} · {N} items`
 - Body: HTML with the executive summary + "PDF attached"
@@ -352,7 +354,8 @@ hockeystack.com
 | Opus hallucinates items not in our DB | Validation strips them. Log warning. |
 | PDF generation fails | Email a text-only digest with item list. Alert. |
 | Resend API down | Retry with exponential backoff (1, 5, 25 min). After 3 retries, write to `output/failed/` for manual send. |
-| Rate limit (MAX OAuth) | Detect 429, back off, halve enrichment batch size. |
+| Rate limit on Haiku enrichment (429) | Detect, exponential backoff, halve batch size. |
+| Rate limit on Opus analyst (429) | Wait full retry-after duration (Opus call is single critical), retry up to 3x. If still failing, fall back to pre_score ranking and send digest with "limited analysis" header note. |
 | DB locked | SQLite WAL mode + retry. |
 
 ## Anti-Hallucination Measures
@@ -362,7 +365,7 @@ The user explicitly required: **agents must collect real info, not hallucinate**
 1. **Collectors never generate content.** They only fetch + parse from real URLs. No LLM in collection layer.
 2. **Enrichment LLM only adds metadata** (classification, tags). It can't invent new items — its input is strict JSON of real items.
 3. **Master analyst is strictly told**: "Only rank items provided. Never fabricate. Never inflate facts."
-4. **Validation layer**: After Opus runs, every selected `item_id` is checked against the DB. Items not in DB are stripped from output (with warning logged).
+4. **Validation layer**: After Opus runs, every selected `item_id` is checked against the DB **AND verified to have `published_at` within the active 2-hour window**. Items failing either check are stripped from output (with warning logged). This is the enforcement gate, not the SQL filter alone.
 5. **Source URL is always shown** in the PDF alongside every item — Ege can click through to verify.
 6. **2-hour window enforcement**: SQL query filters by `published_at`, not by Opus's judgment. Opus cannot include older items.
 
@@ -412,7 +415,7 @@ ai-intel-pipeline/
 │       │   ├── render.py
 │       │   └── templates/
 │       │       └── digest.html
-│       ├── email/
+│       ├── mailer/
 │       │   ├── __init__.py
 │       │   └── send.py
 │       └── db/
@@ -451,10 +454,8 @@ ai-intel-pipeline/
 - **Phase 4**: Personalization — track which items Ege clicks through to, feed back into ranking.
 - **Phase 5**: Pattern detection — second-order analysis ("3 companies got funded this week in voice agents → that's a pattern").
 
-## Open Questions
+## Resolved Decisions
 
-1. **Domain for email sender** — Ege has `evasocial.ai`. Use `intel@evasocial.ai` (requires DNS verification in Resend, ~10 min one-time)? Or use Resend's default `onboarding@resend.dev` for v1?
-2. **Watchlist seed items** — beyond Mindra/Caretta/Hockeystack mentioned, anything else?
-3. **First-cycle backfill** — should the first digest include items from the past 24h to seed (so Ege gets value immediately), or strictly the past 2h from the moment of first run?
-
-These will be resolved during implementation; not blockers for spec approval.
+1. **Sender address (v1):** `onboarding@resend.dev` — Resend's default, zero DNS setup. Migrate to `intel@evasocial.ai` if deliverability suffers.
+2. **First-cycle backfill:** First digest includes items from the past **24 hours** (not just 2h), so Ege gets immediate value. Cycle 2+ uses strict 2h window. Implemented as a `--backfill-hours` CLI flag, default 24 on first run, 2 thereafter.
+3. **Watchlist seed items:** Start with Mindra, Caretta, Hockeystack. Ege adds more anytime via `config/watchlist.txt`.
