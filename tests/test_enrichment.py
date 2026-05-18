@@ -58,6 +58,29 @@ async def test_enrich_batch_returns_empty_on_malformed_json():
 
 
 @pytest.mark.asyncio
+async def test_enrich_batch_extracts_json_from_prose():
+    """Regression: Haiku sometimes wraps JSON in explanatory prose despite the
+    'no prose' instruction. The extractor must dig the JSON out of the surrounding text."""
+    items = [make_item("Anthropic ships X", 1)]
+    inner_json = json.dumps([
+        {"item_id": 1, "classification": "launch", "ai_relevance": 0.9,
+         "entities": {}, "pre_score": 8, "skip_reason": None},
+    ])
+    wrapped = (
+        "Sure, here is the analysis of the items you provided:\n\n"
+        f"{inner_json}\n\n"
+        "Let me know if you'd like further refinements."
+    )
+    fake_response = MagicMock()
+    fake_response.content = [MagicMock(text=wrapped)]
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_response
+
+    enriched = await enrich_batch(items, client=fake_client, model="m")
+    assert enriched[1]["classification"] == "launch"
+
+
+@pytest.mark.asyncio
 async def test_enrich_batch_strips_markdown_fences():
     """Regression: Haiku sometimes wraps JSON in ```json ... ``` fences."""
     items = [make_item("Anthropic ships X", 1)]

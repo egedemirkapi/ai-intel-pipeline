@@ -14,9 +14,49 @@ _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n(.*?)\n```\s*$", re.DOTALL)
 
 
 def _strip_markdown_fences(text: str) -> str:
-    """Strip ```json ... ``` fences that Haiku sometimes wraps responses in."""
+    """Strip ```json ... ``` fences that Haiku sometimes wraps responses in.
+
+    Then, if the result still isn't valid JSON, fall back to extracting the
+    first top-level {...} block — handles cases where Haiku adds prose before
+    or after the JSON despite being told not to.
+    """
     m = _FENCE_RE.match(text)
-    return m.group(1) if m else text.strip()
+    candidate = m.group(1) if m else text.strip()
+
+    # Quick path: if it parses already, return as-is.
+    import json as _json
+    try:
+        _json.loads(candidate)
+        return candidate
+    except _json.JSONDecodeError:
+        pass
+
+    # Fallback: scan for the first top-level {...} block, respecting strings.
+    start = candidate.find("{")
+    if start == -1:
+        return candidate  # nothing to extract; caller will fail and log
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(candidate)):
+        ch = candidate[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return candidate[start:i + 1]
+    return candidate  # unmatched braces; let caller fail cleanly
 
 
 def _load_prompt() -> str:

@@ -92,9 +92,20 @@ async def generate_digest(
         try:
             resp = client.messages.create(
                 model=model,
-                max_tokens=8192,
+                # 47 items × ~150 tokens of "why it matters" each + summary
+                # easily exceeds 8192. Haiku 4.5 supports 64k output; 16384
+                # is comfortable headroom without burning the quota.
+                max_tokens=16384,
                 system=system_prompt,
-                messages=[{"role": "user", "content": f"Items to rank:\n{json.dumps(payload)}"}],
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Items to rank:\n{json.dumps(payload)}\n\n"
+                        "REMINDER: respond with ONLY the JSON object. "
+                        "Your response must start with `{` and end with `}`. "
+                        "No prose, no markdown fences, no commentary."
+                    ),
+                }],
             )
             break
         except anthropic.RateLimitError as e:
