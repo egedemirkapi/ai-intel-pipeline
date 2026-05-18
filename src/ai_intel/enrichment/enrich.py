@@ -31,10 +31,18 @@ def _strip_markdown_fences(text: str) -> str:
     except _json.JSONDecodeError:
         pass
 
-    # Fallback: scan for the first top-level {...} block, respecting strings.
-    start = candidate.find("{")
-    if start == -1:
+    # Fallback: scan for the first top-level JSON value — either `{...}` (analyst)
+    # or `[...]` (enrichment). Respect strings + escapes so braces inside JSON
+    # string values don't throw off the depth counter.
+    first_obj = candidate.find("{")
+    first_arr = candidate.find("[")
+    candidates_pos = [p for p in (first_obj, first_arr) if p != -1]
+    if not candidates_pos:
         return candidate  # nothing to extract; caller will fail and log
+    start = min(candidates_pos)
+    open_ch = candidate[start]
+    close_ch = "}" if open_ch == "{" else "]"
+
     depth = 0
     in_str = False
     escape = False
@@ -50,13 +58,13 @@ def _strip_markdown_fences(text: str) -> str:
             continue
         if ch == '"':
             in_str = True
-        elif ch == "{":
+        elif ch == open_ch:
             depth += 1
-        elif ch == "}":
+        elif ch == close_ch:
             depth -= 1
             if depth == 0:
                 return candidate[start:i + 1]
-    return candidate  # unmatched braces; let caller fail cleanly
+    return candidate  # unmatched brackets; let caller fail cleanly
 
 
 def _load_prompt() -> str:
