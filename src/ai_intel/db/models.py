@@ -33,3 +33,44 @@ class Digest(SQLModel, table=True):
     pdf_path: Optional[str] = None
     sent_at: Optional[datetime] = None
     sent_to: Optional[str] = None
+
+
+# ─── Jarvis memory layer (Phase 1) ──────────────────────────────────────
+#
+# Embeddings live in a separate table so re-running with a different
+# embedding model is just a re-fill (no schema change). Vector stored as
+# packed float32 bytes for compactness.
+
+
+class Embedding(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    # Exactly one of these two is set; the pair (item_id, note_id) is the
+    # natural key for "what does this embedding cover".
+    item_id: Optional[int] = Field(default=None, foreign_key="item.id", index=True)
+    note_id: Optional[int] = Field(default=None, foreign_key="personalnote.id", index=True)
+    model: str  # e.g. "voyage-3" or "fake-256"
+    dim: int
+    vector: bytes  # np.float32(dim,).tobytes()
+    created_at: datetime = Field(index=True)
+
+
+class PersonalNote(SQLModel, table=True):
+    """User-typed memories (`jarvis note "..."`).
+
+    Source-tagged so retrieval can filter notes vs. intel-feed items.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    text: str
+    source: str = Field(default="user_note", index=True)
+    created_at: datetime = Field(index=True)
+
+
+class MemoryQuery(SQLModel, table=True):
+    """Append-only audit log of recall queries — useful for debugging
+    retrieval quality and for the BrainBench-style replay loop later.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    query: str
+    k: int
+    result_ids_json: Optional[str] = None  # JSON list[int] of Item/Note ids returned
+    created_at: datetime = Field(index=True)
