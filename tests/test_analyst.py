@@ -100,8 +100,9 @@ async def test_digest_enforces_window(tmp_path: Path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_digest_low_signal_skips_opus(tmp_path: Path, monkeypatch):
-    """When <10 items, skip Opus call and return mini-digest from pre_score ordering."""
+async def test_digest_runs_analyst_even_on_small_windows(tmp_path: Path, monkeypatch):
+    """Small batches (<10 items) should still get analyst 'why it matters' — Haiku
+    is cheap and a 3-item digest with analysis beats a headline-only fallback."""
     engine = get_engine(tmp_path / "test.db")
     init_db(engine)
     now = datetime.now(timezone.utc)
@@ -110,14 +111,25 @@ async def test_digest_low_signal_skips_opus(tmp_path: Path, monkeypatch):
             insert_item(s, i, f"Item {i}", now - timedelta(minutes=20 * i), pre_score=10 - i)
         s.commit()
 
+    fake_response = MagicMock()
+    fake_response.content = [MagicMock(text=json.dumps({
+        "summary": "Three things happened.",
+        "top_50": [
+            {"item_id": 1, "rank": 1, "why_it_matters": "a"},
+            {"item_id": 2, "rank": 2, "why_it_matters": "b"},
+            {"item_id": 3, "rank": 3, "why_it_matters": "c"},
+        ],
+    }))]
     fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_response
+
     monkeypatch.setattr("ai_intel.analyst.digest.get_anthropic_client", lambda: fake_client)
     monkeypatch.setattr("ai_intel.analyst.digest.PROMPT_PATH", tmp_path / "p.txt")
     (tmp_path / "p.txt").write_text("prompt")
 
     digest = await generate_digest(
-        engine, window_start=now - timedelta(hours=2), window_end=now, model="opus"
+        engine, window_start=now - timedelta(hours=2), window_end=now, model="haiku"
     )
     assert len(digest["top_items"]) == 3
-    assert "Low signal" in digest["summary"] or "low signal" in digest["summary"]
-    fake_client.messages.create.assert_not_called()
+    assert digest["summary"] == "Three things happened."
+    fake_client.messages.create.assert_called_once()
