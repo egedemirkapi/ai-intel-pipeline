@@ -37,12 +37,22 @@ class RSSCollector(Collector):
 
         feed = feedparser.parse(content)
 
+        # Atom feeds (OpenAI, DeepMind, Stratechery, Pragmatic Engineer) often
+        # only populate updated_parsed, not published_parsed. RSS 2.0 feeds
+        # populate published_parsed. Fall through both, then created_parsed.
+        # If a feed gives no date at all, treat the item as fresh (now).
+        now_utc = datetime.now(timezone.utc)
         for entry in feed.entries:
             try:
-                tup = getattr(entry, "published_parsed", None)
+                tup = (
+                    getattr(entry, "published_parsed", None)
+                    or getattr(entry, "updated_parsed", None)
+                    or getattr(entry, "created_parsed", None)
+                )
                 if tup is None:
-                    continue
-                published_at = datetime(*tup[:6], tzinfo=timezone.utc)
+                    published_at = now_utc
+                else:
+                    published_at = datetime(*tup[:6], tzinfo=timezone.utc)
 
                 if published_at <= since:
                     continue

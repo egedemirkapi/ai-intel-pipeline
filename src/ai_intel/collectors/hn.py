@@ -9,32 +9,42 @@ logger = logging.getLogger(__name__)
 
 AI_KEYWORDS = {
     # Core AI/ML terms
-    "ai", "ml", "llm", "agent", "agents", "ai-",
+    "ai", "ml", "llm", "llms", "agent", "agents", "ai-",
+    "model", "models", "inference", "training", "fine-tun",
+    "prompt", "prompts", "prompting",
     # Labs + products
     "anthropic", "claude", "openai", "gpt", "chatgpt", "sora",
-    "gemini", "google deepmind", "deepmind",
+    "gemini", "google deepmind", "deepmind", "nano banana",
     "deepseek", "mistral", "meta-llama", "llama", "qwen", "yi-", "kimi",
     "grok", "xai", "x.ai",
-    "stability", "stable diffusion", "midjourney", "runway",
-    "huggingface", "hugging face",
+    "stability", "stable diffusion", "midjourney", "runway", "veo", "pika",
+    "huggingface", "hugging face", "scale ai", "databricks",
+    "nvidia", "nvda",  # NVIDIA news drives the entire AI stack
     # Concepts
-    "transformer", "rag", "embedding", "fine-tun", "diffusion",
+    "transformer", "rag", "embedding", "diffusion",
     "neural", "deep learning", "machine learning", "artificial intelligence",
-    "reasoning model", "chain-of-thought", "cot ",
-    "multimodal", "vision-language", "vlm ",
-    "agentic", "tool use", "tool-use", "agent infra",
+    "reasoning model", "reasoning", "chain-of-thought", "cot ",
+    "multimodal", "vision-language", "vlm ", "mixture of experts", "moe ",
+    "agentic", "tool use", "tool-use", "agent infra", "function calling",
+    "context window", "long context", "tokens",
     # AI startups / products / dev tools
     "copilot", "cursor", "perplexity", "groq", "cerebras", "langchain",
     "vector db", "vector database", "llamaindex", "ollama",
     "windsurf", "replit agent", "devin", "bolt.new", "v0.dev",
-    "browserbase", "phidata", "crewai", "autogen",
-    # Funding / scaling signals (any tech news with these likely relevant)
-    "raised $", "series a", "series b", "series c", "valued at",
+    "browserbase", "phidata", "crewai", "autogen", "mcp",
+    "harvey", "glean", "writer", "jasper", "elevenlabs", "character.ai",
+    "suno", "udio", "luma", "pika labs", "ideogram",
+    # Funding / scaling signals
+    "raised $", "raises $", "series a", "series b", "series c", "series d",
+    "valued at", "valuation", "funding round", "venture round",
     "yc s2", "yc w2", "yc x", "ycombinator",
-    "h100", "h200", "b100", "b200", "tpu",
+    "h100", "h200", "b100", "b200", "blackwell", "tpu", "trainium",
+    "compute", "data center", "datacenter", "gpus",
     # Other relevant
-    "rlhf", "alignment", "agi", "asi", "superintelligence",
-    "code generation", "code-gen", "coding agent",
+    "rlhf", "alignment", "safety", "agi", "asi", "superintelligence",
+    "code generation", "code-gen", "coding agent", "vibe code",
+    "robot", "robotics", "humanoid", "autonomous",
+    "chatbot", "voice ai", "speech ai", "text-to-",
 }
 
 HN_BASE = "https://hacker-news.firebaseio.com/v0"

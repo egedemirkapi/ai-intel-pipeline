@@ -28,7 +28,9 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
     output_dir = Path("output")
 
     async def collect_job():
-        since = datetime.now(timezone.utc) - timedelta(hours=6)
+        # 24h window so slow RSS feeds (weekly newsletters, etc.) get caught.
+        # DB-level url_hash dedup prevents duplicates across overlapping cycles.
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
         result = await run_all_collectors(engine, collectors, since=since)
         logger.info(f"Collect cycle: {result}")
 

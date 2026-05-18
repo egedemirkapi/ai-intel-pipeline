@@ -38,7 +38,6 @@ sources:
     - rss_crunchbase
     # AI-specific newsletters
     - rss_simon_willison
-    - rss_bens_bites
     - rss_import_ai
     - rss_ai_snake_oil
     - rss_one_useful_thing
@@ -54,3 +53,4 @@ sources:
     # Disabled (404):
     # - rss_a16z
     # - rss_anthropic
+    # - rss_bens_bites   # feed.beehiiv.com/feed returns 404 since ~2026-05
