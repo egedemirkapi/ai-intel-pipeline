@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -81,22 +82,46 @@ async def generate_digest(
         }
 
     logger.info(f"Calling analyst model: {model} with {len(payload)} items")
-    try:
-        resp = client.messages.create(
-            model=model,
-            max_tokens=8192,
-            system=system_prompt,
-            messages=[{"role": "user", "content": f"Items to rank:\n{json.dumps(payload)}"}],
+    # Outer retry layer on top of SDK retries. The SDK retries 5x internally
+    # for transient errors, but DNS issues sometimes persist longer than the
+    # SDK's backoff window. Three outer attempts spaced 30/60s give the
+    # network real recovery time before we give up and fall back.
+    resp = None
+    last_error_kind = None
+    for attempt in range(3):
+        try:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=8192,
+                system=system_prompt,
+                messages=[{"role": "user", "content": f"Items to rank:\n{json.dumps(payload)}"}],
+            )
+            break
+        except anthropic.RateLimitError as e:
+            # Don't retry rate-limits — they won't clear in 30s. Fall back now.
+            logger.error(f"Analyst model {model} rate-limited (429): {e}")
+            return _prescore_fallback(f"analyst model {model} rate-limited (429)")
+        except anthropic.APIConnectionError as e:
+            last_error_kind = f"APIConnectionError"
+            wait = 30 * (attempt + 1)
+            logger.warning(
+                f"Analyst APIConnectionError (attempt {attempt+1}/3): {e}. "
+                f"Waiting {wait}s before retry."
+            )
+            if attempt < 2:
+                await asyncio.sleep(wait)
+        except anthropic.APIError as e:
+            logger.error(f"Analyst model {model} API error: {e}")
+            return _prescore_fallback(f"analyst model {model} API error ({type(e).__name__})")
+        except Exception as e:
+            logger.exception(f"Unexpected analyst failure ({model}): {e}")
+            return _prescore_fallback(f"unexpected analyst failure with {model} ({type(e).__name__})")
+
+    if resp is None:
+        return _prescore_fallback(
+            f"analyst {model} unreachable after 3 outer retries ({last_error_kind}) — "
+            f"network/DNS issue suspected"
         )
-    except anthropic.RateLimitError as e:
-        logger.error(f"Analyst model {model} rate-limited (429): {e}")
-        return _prescore_fallback(f"analyst model {model} rate-limited (429)")
-    except anthropic.APIError as e:
-        logger.error(f"Analyst model {model} API error: {e}")
-        return _prescore_fallback(f"analyst model {model} API error ({type(e).__name__})")
-    except Exception as e:
-        logger.exception(f"Unexpected analyst failure ({model}): {e}")
-        return _prescore_fallback(f"unexpected analyst failure with {model} ({type(e).__name__})")
 
     raw_text = resp.content[0].text
     cleaned = _strip_markdown_fences(raw_text)

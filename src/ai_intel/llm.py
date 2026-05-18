@@ -19,6 +19,9 @@ def get_anthropic_client() -> Anthropic:
             "(recommended) or run `claude setup-token` to use MAX-plan OAuth."
         )
 
+    # max_retries=5 (up from SDK default of 2) to survive transient DNS /
+    # network hiccups — APIConnectionError was tanking digests when the
+    # user's Windows network had brief getaddrinfo failures.
     if api_key.startswith("sk-ant-oat"):
         # OAuth tokens need Bearer auth + the oauth beta header. The SDK's
         # `auth_token` param routes the token via Authorization: Bearer instead
@@ -26,5 +29,6 @@ def get_anthropic_client() -> Anthropic:
         return Anthropic(
             auth_token=api_key,
             default_headers={"anthropic-beta": "oauth-2025-04-20"},
+            max_retries=5,
         )
-    return Anthropic(api_key=api_key)
+    return Anthropic(api_key=api_key, max_retries=5)
