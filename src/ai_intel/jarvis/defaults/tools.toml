@@ -1,0 +1,34 @@
+# Jarvis capability registry — bundled defaults.
+#
+# Edit ~/.jarvis/tools.toml to override per-user. Anything in user file
+# wins; anything not mentioned in either file is denied by default.
+#
+# Wildcard suffix * is supported (longest-prefix match; deny wins ties).
+
+# ── Internet ─────────────────────────────────────────────────────────
+"web.fetch"               = "allow"
+"web.search"              = "allow"
+
+# ── Memory & intel (read-only over user's own data) ─────────────────
+"memory.recall"           = "allow"
+"memory.add_note"         = "allow"
+"intel.query"             = "allow"
+
+# ── Google Workspace — READ ONLY ─────────────────────────────────────
+"gworkspace.read_calendar" = "allow"
+"gworkspace.read_email"    = "allow"
+"gworkspace.read_drive"    = "allow"
+
+# ── Google Workspace — DENY (user keeps control of writes) ──────────
+"gworkspace.send_email"    = "deny"
+"gworkspace.modify_*"      = "deny"
+"gworkspace.delete_*"      = "deny"
+
+# ── Messaging ────────────────────────────────────────────────────────
+"telegram.reply_to_user"   = "allow"
+"telegram.send_to_others"  = "deny"
+
+# ── Filesystem & shell (opt-in only) ─────────────────────────────────
+"file.read"                = "allow"
+"file.write"               = "deny"
+"shell.exec"               = "deny"
