@@ -42,16 +42,6 @@ async def generate_digest(
     if not items:
         return {"summary": "No items in window.", "top_items": [], "items_considered": 0}
 
-    if len(items) < 10:
-        return {
-            "summary": f"Low signal window — {len(items)} items.",
-            "top_items": [
-                {"item_id": i.id, "rank": idx + 1, "why_it_matters": ""}
-                for idx, i in enumerate(items)
-            ],
-            "items_considered": len(items),
-        }
-
     # Step 2: Build payload for Opus
     payload = [
         {
