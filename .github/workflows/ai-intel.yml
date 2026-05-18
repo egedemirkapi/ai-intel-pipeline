@@ -1,0 +1,70 @@
+name: AI Intel — 2h digest
+
+on:
+  schedule:
+    # Every 2 hours on the hour
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Prevent overlapping runs (cache contention)
+    concurrency:
+      group: ai-intel-digest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          python -m playwright install --with-deps chromium
+
+      # Restore the items.db + .started marker from the previous run.
+      # Without this, dedup state resets and every run sends duplicates.
+      - name: Restore state cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/items.db
+            data/.started
+          key: ai-intel-state-${{ github.run_id }}
+          restore-keys: |
+            ai-intel-state-
+
+      - name: Run pipeline once
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PRODUCT_HUNT_TOKEN: ${{ secrets.PRODUCT_HUNT_TOKEN }}
+          LOG_LEVEL: INFO
+        run: python -m ai_intel --once
+
+      # Save state for the next run. Key is unique per run; restore-keys finds
+      # the most recent regardless.
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/items.db
+            data/.started
+          key: ai-intel-state-${{ github.run_id }}
+
+      - name: Upload digest PDF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-intel-${{ github.run_id }}
+          path: output/*.pdf
+          retention-days: 14
+          if-no-files-found: ignore

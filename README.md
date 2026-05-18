@@ -167,14 +167,30 @@ Every link in the email goes to the real article. You can verify any claim by cl
 
 ## Deploy 24/7 (so it runs without your laptop)
 
-The repo includes `render.yaml` for one-click Render deploy:
+Two options.
 
-1. Push to GitHub (already done if you cloned this).
-2. Go to [render.com](https://render.com), click **New → Blueprint**, connect this repo.
-3. Set env vars in the Render dashboard: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `EMAIL_TO`.
-4. Click Deploy.
+### Option A — GitHub Actions cron (FREE)
 
-Costs $7/month on the Starter plan (always-on). The Free tier sleeps after inactivity, which would break the scheduler — don't use it.
+The repo includes `.github/workflows/ai-intel.yml`. It runs `python -m ai_intel --once` every 2 hours, caches `items.db` between runs so dedup state survives, and uploads each digest PDF as an artifact.
+
+1. Push to GitHub
+2. In your repo's **Settings → Secrets and variables → Actions**, add:
+   - `ANTHROPIC_API_KEY` — from `claude setup-token` or console.anthropic.com
+   - `RESEND_API_KEY` — from resend.com
+   - `PRODUCT_HUNT_TOKEN` — optional, leave empty if unset
+
+That's it. Free tier: 2000 mins/month private repos (unlimited for public). Each run is ~3-5 min × 12 runs/day = ~30 min/day = ~900 min/month. Public repo → free forever; private → free up to ~60 runs/day.
+
+### Option B — Render Starter ($7/mo)
+
+`render.yaml` is in the repo:
+
+1. Push to GitHub
+2. [render.com](https://render.com) → **New → Blueprint** → connect this repo
+3. Set env vars: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `EMAIL_TO`
+4. Click Deploy
+
+Free tier sleeps after inactivity and would break the scheduler — don't use it.
 
 ---
 

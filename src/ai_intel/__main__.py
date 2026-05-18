@@ -1,4 +1,5 @@
 # src/ai_intel/__main__.py
+import argparse
 import asyncio
 import logging
 import signal
@@ -33,7 +34,33 @@ async def run_first_digest_now(engine, config):
     )
 
 
-async def amain():
+async def run_once(engine, config):
+    """Single-shot pipeline: collect -> enrich -> digest, then exit.
+
+    Designed for cron/GitHub Actions invocation. Honors first-run 24h backfill.
+    """
+    log = logging.getLogger(__name__)
+    is_first_run = not (Path("data") / ".started").exists()
+    if is_first_run:
+        await run_first_digest_now(engine, config)
+        (Path("data") / ".started").touch()
+        return
+
+    log.info("Running single-shot pipeline cycle...")
+    collectors = build_collectors_from_config(config)
+    since = datetime.now(timezone.utc) - timedelta(hours=6)
+    await run_all_collectors(engine, collectors, since=since)
+    await enrich_new_items(engine, model=config["llm"]["enrichment_model"])
+    await generate_and_send_digest(
+        engine=engine,
+        output_dir=Path("output"),
+        window_hours=config["delivery"]["digest_window_hours"],
+        model=config["llm"]["analyst_model"],
+        email_to=config["delivery"]["email_to"],
+    )
+
+
+async def amain(once: bool):
     load_dotenv()
     setup_logging()
     log = logging.getLogger(__name__)
@@ -47,7 +74,6 @@ async def amain():
         config["delivery"]["digest_window_hours"],
     )
 
-    # Diagnostic: confirm API key was loaded correctly (only first 14 chars shown)
     import os as _os
     ak = _os.getenv("ANTHROPIC_API_KEY", "")
     rk = _os.getenv("RESEND_API_KEY", "")
@@ -62,6 +88,10 @@ async def amain():
     db_path.parent.mkdir(exist_ok=True)
     engine = get_engine(db_path)
     init_db(engine)
+
+    if once:
+        await run_once(engine, config)
+        return
 
     is_first_run = not (Path("data") / ".started").exists()
     if is_first_run:
@@ -78,13 +108,17 @@ async def amain():
         try:
             loop.add_signal_handler(sig, stop_event.set)
         except NotImplementedError:
-            pass  # Windows doesn't support add_signal_handler
+            pass  # Windows
     await stop_event.wait()
     scheduler.shutdown(wait=False)
 
 
 def main():
-    asyncio.run(amain())
+    parser = argparse.ArgumentParser(prog="ai-intel")
+    parser.add_argument("--once", action="store_true",
+                        help="Run a single collect+enrich+digest cycle and exit")
+    args = parser.parse_args()
+    asyncio.run(amain(once=args.once))
 
 
 if __name__ == "__main__":
