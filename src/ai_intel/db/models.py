@@ -74,3 +74,63 @@ class MemoryQuery(SQLModel, table=True):
     k: int
     result_ids_json: Optional[str] = None  # JSON list[int] of Item/Note ids returned
     created_at: datetime = Field(index=True)
+
+
+# ─── Agent fleet (Phase 7) ──────────────────────────────────────────────
+#
+# Every @agent run gets a row in AgentRun. Status transitions:
+#   pending → running → completed | failed
+# Tokens + cost are recorded so `jarvis agents status` and `jarvis cost`
+# can answer "what did the fleet cost this week" cheaply.
+
+
+class AgentRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    agent_id: str = Field(index=True)
+    status: str = Field(index=True)  # pending | running | completed | failed
+    started_at: datetime = Field(index=True)
+    finished_at: Optional[datetime] = Field(default=None, index=True)
+    prompt_tokens: int = Field(default=0)
+    completion_tokens: int = Field(default=0)
+    cost_estimate_usd: float = Field(default=0.0)
+    auth_mode: Optional[str] = None  # "oauth" | "api_key" | None (no LLM call)
+    summary: Optional[str] = None
+    error: Optional[str] = None
+    output_pointer_json: Optional[str] = None  # FK-ish hint to per-agent output table
+
+
+# Phase 8 output tables — created now so the schema is stable; Phase 8
+# agents populate them.
+
+
+class SaturationAssessment(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    topic: str = Field(index=True)
+    score: float  # [0, 1] — 1 = saturated
+    sources_json: Optional[str] = None  # supporting Item ids + URLs
+    competitor_count: int = Field(default=0)
+    assessed_at: datetime = Field(index=True)
+    expires_at: datetime = Field(index=True)  # cache TTL, default +7 days
+    notes: Optional[str] = None
+
+
+class PainCluster(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    label: str = Field(index=True)
+    examples_json: Optional[str] = None
+    member_item_ids_json: Optional[str] = None
+    last_updated: datetime = Field(index=True)
+
+
+class IdeaCandidate(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    proposed_at: datetime = Field(index=True)
+    idea_text: str
+    tech_basis: Optional[str] = None
+    pain_basis_cluster_id: Optional[int] = Field(default=None, foreign_key="paincluster.id")
+    evaluator_score: Optional[int] = None  # 0-100
+    evaluator_verdict: Optional[str] = None  # "killed" | "needs_work" | "escalated"
+    persona_critiques_json: Optional[str] = None  # {pid: {score, comment}, ...}
+    failure_parallels_json: Optional[str] = None  # cite ≥2 from failure_corpus
+    status: str = Field(default="proposed", index=True)
+    # proposed | killed | needs_work | escalated | shown

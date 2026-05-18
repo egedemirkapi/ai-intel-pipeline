@@ -167,6 +167,56 @@ def _cmd_note(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_agents_status(args: argparse.Namespace) -> int:
+    from ai_intel.agents.observability import summary_for_user
+
+    db_path = Path(args.db) if args.db else DEFAULT_DB_PATH
+    if not db_path.exists():
+        print(f"error: no db at {db_path} — run the pipeline at least once", file=sys.stderr)
+        return 1
+    engine = _open_engine(db_path)
+    print(summary_for_user(engine, window_hours=args.window))
+    return 0
+
+
+def _cmd_agents_tail(args: argparse.Namespace) -> int:
+    from ai_intel.agents.observability import last_completed, recent_runs
+
+    db_path = Path(args.db) if args.db else DEFAULT_DB_PATH
+    if not db_path.exists():
+        print(f"error: no db at {db_path}", file=sys.stderr)
+        return 1
+    engine = _open_engine(db_path)
+
+    if args.completed_only:
+        last = last_completed(engine, args.agent_id)
+        rows = [last] if last else []
+    else:
+        rows = recent_runs(engine, agent_id=args.agent_id, limit=args.limit)
+
+    if not rows:
+        print(f"(no runs for agent {args.agent_id!r})")
+        return 0
+
+    for r in rows:
+        dur = "—"
+        if r.finished_at:
+            dur = f"{(r.finished_at - r.started_at).total_seconds():.1f}s"
+        print(
+            f"#{r.id}  {r.started_at.strftime('%Y-%m-%d %H:%M:%S UTC')}  "
+            f"{r.status:<10}  {dur:>7}  "
+            f"tokens={r.prompt_tokens}+{r.completion_tokens}  "
+            f"${r.cost_estimate_usd:.4f}  "
+            f"auth={r.auth_mode or '—'}"
+        )
+        if r.summary:
+            print(f"     summary: {r.summary}")
+        if r.error:
+            first_line = r.error.splitlines()[0] if r.error else ""
+            print(f"     error:   {first_line[:200]}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ai_intel.jarvis",
@@ -215,6 +265,21 @@ def build_parser() -> argparse.ArgumentParser:
     note.add_argument("--source", default="user_note", help="Tag (default: user_note)")
     note.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
     note.set_defaults(func=_cmd_note)
+
+    agents = sub.add_parser("agents", help="Observe the agent fleet")
+    agents_sub = agents.add_subparsers(dest="agents_cmd", required=True)
+
+    astatus = agents_sub.add_parser("status", help="Fleet status summary")
+    astatus.add_argument("--window", type=int, default=24, help="Hours back to scan (default 24)")
+    astatus.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
+    astatus.set_defaults(func=_cmd_agents_status)
+
+    atail = agents_sub.add_parser("tail", help="Recent runs of one agent")
+    atail.add_argument("agent_id", help="The agent_id (e.g. saturator, proposer)")
+    atail.add_argument("-n", "--limit", type=int, default=5)
+    atail.add_argument("--completed-only", action="store_true", help="Only the latest completed run")
+    atail.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
+    atail.set_defaults(func=_cmd_agents_tail)
 
     return p
 
