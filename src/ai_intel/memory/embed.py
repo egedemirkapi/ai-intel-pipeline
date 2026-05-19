@@ -67,8 +67,18 @@ class VoyageEmbedder:
     Defaults to ``voyage-3`` (~$0.06 / 1M tokens, dim=1024). Requires
     ``VOYAGE_API_KEY`` in env. Uses httpx (already a project dep) so we
     don't take on the voyageai SDK as a hard dependency.
+
+    Handles 429s with exponential backoff so we respect free-tier limits
+    (3 RPM, 10K TPM) without manual baby-sitting.
     """
     API_URL = "https://api.voyageai.com/v1/embeddings"
+    # Free tier: 3 RPM, 10K TPM (use VOYAGE_MIN_SECONDS_BETWEEN_REQUESTS=22).
+    # Paid tier 2+: 2000 RPM, 1M TPM (default 0.5s is fine).
+    # The env var lets you tune without code changes.
+    MIN_SECONDS_BETWEEN_REQUESTS = float(
+        os.getenv("VOYAGE_MIN_SECONDS_BETWEEN_REQUESTS", "0.5")
+    )
+    MAX_RETRIES = 6
 
     def __init__(
         self,
@@ -84,20 +94,52 @@ class VoyageEmbedder:
                 "VoyageEmbedder requires VOYAGE_API_KEY. "
                 "Get one at https://dash.voyageai.com (free tier covers ~50M tokens)."
             )
+        self._last_request_at: float = 0.0
+
+    def _throttle(self) -> None:
+        import time
+        elapsed = time.monotonic() - self._last_request_at
+        wait = self.MIN_SECONDS_BETWEEN_REQUESTS - elapsed
+        if wait > 0:
+            time.sleep(wait)
 
     def embed(self, texts: list[str]) -> np.ndarray:
+        import time
+
         import httpx  # already a project dep
 
-        resp = httpx.post(
-            self.API_URL,
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            json={"input": texts, "model": self.model, "input_type": "document"},
-            timeout=30.0,
-        )
-        resp.raise_for_status()
+        attempt = 0
+        while True:
+            self._throttle()
+            self._last_request_at = time.monotonic()
+            resp = httpx.post(
+                self.API_URL,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "input": texts,
+                    "model": self.model,
+                    "input_type": "document",
+                },
+                timeout=60.0,
+            )
+            if resp.status_code == 429:
+                attempt += 1
+                if attempt > self.MAX_RETRIES:
+                    raise RuntimeError(
+                        f"Voyage 429 after {self.MAX_RETRIES} retries — "
+                        f"upgrade tier or wait. Body: {resp.text[:200]}"
+                    )
+                # Respect Retry-After if present, else exponential backoff
+                retry_after = resp.headers.get("retry-after")
+                wait = float(retry_after) if retry_after else min(60.0, 5.0 * (2 ** (attempt - 1)))
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            break
+
         data = resp.json()["data"]
         vecs = np.array([d["embedding"] for d in data], dtype=np.float32)
         # Normalize for cosine-via-dot-product

@@ -41,8 +41,15 @@ def embed_pending(
     engine,
     embedder: Embedder | None = None,
     batch_size: int = 32,
+    *,
+    source: str | None = None,
 ) -> int:
     """Embed any Item that doesn't already have an Embedding of this model.
+
+    Args:
+        source: if given, only embed Items where Item.source == this value.
+                Lets you bound expensive provider calls (e.g. Voyage free
+                tier) to a sub-corpus like ``founder_brain``.
 
     Returns count of new Embedding rows.
     """
@@ -59,9 +66,10 @@ def embed_pending(
             )
         ).all())
 
-        unembedded: list[Item] = list(session.exec(
-            select(Item).where(Item.id.is_not(None))  # noqa: E711
-        ).all())
+        q = select(Item).where(Item.id.is_not(None))  # noqa: E711
+        if source is not None:
+            q = q.where(Item.source == source)
+        unembedded: list[Item] = list(session.exec(q).all())
         unembedded = [it for it in unembedded if it.id not in existing_ids]
 
     if not unembedded:
