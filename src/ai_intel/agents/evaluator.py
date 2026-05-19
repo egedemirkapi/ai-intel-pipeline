@@ -1,5 +1,9 @@
 """Evaluator agent — strict multi-persona critic over IdeaCandidate rows.
 
+Note: this agent fires 6 sequential Sonnet calls per candidate. Anthropic
+Tier 1 (new accounts) rate limits make this fragile; we throttle to one
+call per ~5s and rely on the runtime's 429 retry layer for the rest.
+
 For each candidate, runs each of the 6 founder personas (Paul Graham,
 Sam Altman, Garry Tan, Alex Hormozi, a16z, YC Partner) as an
 independent critic. Each persona produces:
@@ -24,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 
 from sqlmodel import Session, select
@@ -159,8 +164,13 @@ async def evaluator(
 
         persona_critiques: dict[str, dict] = {}
 
-        # Run each persona as an independent critic
+        # Run each persona as an independent critic, spaced to be kind to
+        # Anthropic Tier-1 rate limits (~12 RPM for Sonnet, very tight TPM).
+        first_call = True
         for pid in KNOWN_PERSONAS:
+            if not first_call:
+                time.sleep(5.0)
+            first_call = False
             try:
                 persona_text = load_persona(pid)
             except FileNotFoundError:

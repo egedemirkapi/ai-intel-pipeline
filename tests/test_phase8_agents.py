@@ -282,7 +282,8 @@ def test_evaluator_aggregates_persona_subscores_to_escalated(engine):
             "would_fund_or_advise": True,
         }))
 
-    with patch("ai_intel.agents.evaluator.call_llm", side_effect=mock_call):
+    with patch("ai_intel.agents.evaluator.call_llm", side_effect=mock_call), \
+         patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
         result = asyncio.run(evaluator(engine, candidate_id=cand.id))
 
     with Session(engine) as s:
@@ -306,7 +307,7 @@ def test_evaluator_aggregates_to_killed(engine):
             "kill_criterion": "no market",
             "would_fund_or_advise": False,
         })),
-    ):
+    ), patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
         asyncio.run(evaluator(engine, candidate_id=cand.id))
     with Session(engine) as s:
         row = s.get(IdeaCandidate, cand.id)
@@ -322,7 +323,8 @@ def test_evaluator_aggregates_to_needs_work(engine):
         _mock_llm(json.dumps({"subscore": s, "critique": "x", "kill_criterion": "y", "would_fund_or_advise": False}))
         for s in (80, 30, 80, 30, 80, 30)
     ])
-    with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(responses)):
+    with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(responses)), \
+         patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
         asyncio.run(evaluator(engine, candidate_id=cand.id))
     with Session(engine) as s:
         row = s.get(IdeaCandidate, cand.id)
@@ -348,7 +350,8 @@ def test_evaluator_handles_partial_persona_failures(engine):
     bad = _mock_llm("not parseable json")
     # Cycle: good, then 5 bad
     seq = iter([good, bad, bad, bad, bad, bad])
-    with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(seq)):
+    with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(seq)), \
+         patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
         asyncio.run(evaluator(engine, candidate_id=cand.id))
     with Session(engine) as s:
         row = s.get(IdeaCandidate, cand.id)

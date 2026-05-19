@@ -20,6 +20,8 @@ import json
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from ai_intel.jarvis.permissions import (
     USER_CONFIG_PATH,
     ensure_user_config,
@@ -29,6 +31,10 @@ from ai_intel.jarvis.permissions import (
     request_approval,
     resolve_approval,
 )
+
+# Pick up ANTHROPIC_API_KEY / VOYAGE_API_KEY / etc. from the project .env
+# so the CLI works the same whether invoked from PowerShell or WSL.
+load_dotenv()
 
 DEFAULT_DB_PATH = Path("data") / "items.db"
 

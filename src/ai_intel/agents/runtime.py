@@ -127,17 +127,53 @@ def _call_api_key(
     model: str,
     max_tokens: int,
     temperature: float,
+    max_retries: int = 5,
 ) -> LLMResponse:
-    """Standard Anthropic API call via the existing project client."""
+    """Standard Anthropic API call via the existing project client.
+
+    Adds explicit 429 backoff on top of the SDK's built-in retries because
+    Anthropic Tier 1 (new accounts) has tight Sonnet caps and a long
+    evaluator chain hits them fast.
+    """
+    import time
+
+    import anthropic
+
     from ai_intel.llm import get_anthropic_client
 
     client = get_anthropic_client()
-    resp = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        messages=messages,
-    )
+    attempt = 0
+    while True:
+        try:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=messages,
+            )
+            break
+        except anthropic.RateLimitError as exc:
+            attempt += 1
+            if attempt > max_retries:
+                raise
+            # Honor Retry-After if present, else exponential backoff
+            wait = 5.0 * (2 ** (attempt - 1))
+            retry_after = None
+            response = getattr(exc, "response", None)
+            if response is not None:
+                ra = response.headers.get("retry-after")
+                if ra:
+                    try:
+                        retry_after = float(ra)
+                    except ValueError:
+                        retry_after = None
+            wait = retry_after if retry_after is not None else min(wait, 60.0)
+            logger.warning(
+                "Anthropic 429 (attempt %d/%d) — sleeping %.1fs",
+                attempt, max_retries, wait,
+            )
+            time.sleep(wait)
+
     text = ""
     if resp.content:
         first = resp.content[0]
