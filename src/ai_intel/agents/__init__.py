@@ -15,6 +15,7 @@ Public surface:
 """
 from ai_intel.agents.decorator import agent
 from ai_intel.agents.evaluator import evaluator
+from ai_intel.agents.ideation import weekly_ideation
 from ai_intel.agents.observability import (
     recent_runs,
     last_completed,
@@ -31,9 +32,10 @@ from ai_intel.agents.saturator import saturator
 
 # Registry so the CLI can look up agents by id without static if/else.
 AGENT_REGISTRY = {
-    "saturator": saturator,
-    "proposer":  proposer,
-    "evaluator": evaluator,
+    "saturator":       saturator,
+    "proposer":        proposer,
+    "evaluator":       evaluator,
+    "weekly_ideation": weekly_ideation,
 }
 
 __all__ = [
@@ -49,4 +51,5 @@ __all__ = [
     "saturator",
     "proposer",
     "evaluator",
+    "weekly_ideation",
 ]

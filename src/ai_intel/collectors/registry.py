@@ -5,6 +5,7 @@ from typing import Any
 from ai_intel.collectors.base import Collector
 from ai_intel.collectors.google_news import GoogleNewsCollector
 from ai_intel.collectors.hn import HackerNewsCollector
+from ai_intel.collectors.pain_sources import PainSourcesCollector
 from ai_intel.collectors.product_hunt import ProductHuntCollector
 from ai_intel.collectors.reddit import RedditCollector
 from ai_intel.collectors.rss import RSSCollector
@@ -69,6 +70,8 @@ def build_collectors_from_config(cfg: dict[str, Any]) -> list[Collector]:
                 collectors.append(WatchlistCollector(watchlist_path=Path("config/watchlist.txt")))
             elif src_id == "google_news":
                 collectors.append(GoogleNewsCollector(queries=GOOGLE_NEWS_QUERIES))
+            elif src_id == "pain_sources":
+                collectors.append(PainSourcesCollector())
             elif src_id in RSS_FEEDS:
                 source_id, feed_url, filter_ai = RSS_FEEDS[src_id]
                 collectors.append(RSSCollector(source_id=source_id, feed_url=feed_url, filter_ai=filter_ai))

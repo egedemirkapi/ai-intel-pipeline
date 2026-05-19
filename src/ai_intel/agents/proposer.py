@@ -20,13 +20,15 @@ import logging
 import random
 from datetime import datetime, timedelta, timezone
 
-from sqlmodel import Session, desc, select
+from sqlmodel import Session, select
 
 from ai_intel.agents.decorator import agent
 from ai_intel.agents.runtime import call_llm
-from ai_intel.db.models import IdeaCandidate, Item
+from ai_intel.agents.saturator import saturator as _saturator
+from ai_intel.db.models import IdeaCandidate, Item, SaturationAssessment
 from ai_intel.memory.retrieve import recall
 from ai_intel.personas import load_persona
+from sqlmodel import desc
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +133,21 @@ def _pick_pain(engine, days_back: int = 14) -> Item | None:
     return random.choice(pains) if pains else None
 
 
+async def _saturation_score(engine, topic: str, *, model: str) -> float | None:
+    """Run (or fetch cached) saturator for a topic. Returns the score 0-1
+    or None if assessment couldn't be made.
+    """
+    await _saturator(engine, topic=topic, use_cache=True, model=model)
+    with Session(engine) as s:
+        row = s.exec(
+            select(SaturationAssessment)
+            .where(SaturationAssessment.topic == topic)
+            .order_by(desc(SaturationAssessment.assessed_at))
+            .limit(1)
+        ).first()
+    return row.score if row else None
+
+
 @agent("proposer")
 async def proposer(
     engine,
@@ -139,18 +156,54 @@ async def proposer(
     tech_signal: Item | None = None,
     pain: Item | None = None,
     model: str = "claude-haiku-4-5",
+    saturation_threshold: float = 0.6,
+    max_tries: int = 4,
 ):
     """Draft one IdeaCandidate by combining a tech signal + a pain + a
     founder lens. Returns AgentResult dict.
 
+    Before drafting, runs the saturator on the candidate tech topic. If
+    saturation exceeds ``saturation_threshold`` (default 0.6 = crowded),
+    picks a different signal — up to ``max_tries`` attempts. This is the
+    "don't propose in saturated spaces" rule the original plan demanded.
+
     Pass ``tech_signal`` / ``pain`` directly if you want determinism;
     otherwise the agent picks fresh items.
     """
-    tech = tech_signal if tech_signal is not None else _pick_tech_signal(engine)
-    pain_item = pain if pain is not None else _pick_pain(engine)
+    # Resolve tech signal — with saturation gate
+    if tech_signal is not None:
+        tech = tech_signal
+        # Still check saturation, but don't loop (user picked deliberately)
+        sat = await _saturation_score(engine, tech.title, model=model)
+        if sat is not None and sat > saturation_threshold:
+            return {
+                "summary": (
+                    f"explicit tech_signal {tech.title!r} saturated "
+                    f"({sat:.2f} > {saturation_threshold}) — refusing to propose"
+                ),
+            }
+    else:
+        tech = None
+        last_sat: float | None = None
+        for _attempt in range(max_tries):
+            candidate = _pick_tech_signal(engine)
+            if candidate is None:
+                break
+            sat = await _saturation_score(engine, candidate.title, model=model)
+            if sat is None or sat <= saturation_threshold:
+                tech = candidate
+                last_sat = sat
+                break
+            last_sat = sat
+        if tech is None:
+            return {
+                "summary": (
+                    f"every tech signal sampled (n={max_tries}) was saturated "
+                    f"(last score {last_sat}) — nothing to propose"
+                ),
+            }
 
-    if tech is None:
-        return {"summary": "no fresh tech signal available — skipping"}
+    pain_item = pain if pain is not None else _pick_pain(engine)
     # Pain is OK to be None — proposer can still work, the persona supplies
     # the founder-judgment lens. We just substitute "(none)" in the prompt.
 

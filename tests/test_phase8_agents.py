@@ -17,12 +17,29 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from ai_intel.agents import evaluator, proposer, saturator
 from ai_intel.agents.runtime import LLMResponse
+from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 from ai_intel.db.models import (
     Embedding,
     IdeaCandidate,
     Item,
     SaturationAssessment,
 )
+
+
+def _seed_saturation(engine, topic: str, *, score: float = 0.2) -> None:
+    """Pre-seed a SaturationAssessment so the proposer's gate finds a
+    cached value and skips the (mocked) LLM call inside the saturator."""
+    now = _dt.now(_tz.utc)
+    with Session(engine) as s:
+        s.add(SaturationAssessment(
+            topic=topic,
+            score=score,
+            competitor_count=2,
+            assessed_at=now,
+            expires_at=now + _td(days=7),
+            notes="test seed",
+        ))
+        s.commit()
 from ai_intel.memory.embed import FakeEmbedder
 from ai_intel.memory.store import embed_pending
 
@@ -185,6 +202,9 @@ def test_proposer_writes_idea_candidate(engine, embedder, monkeypatch):
     embed_pending(engine, embedder=embedder)
 
     monkeypatch.setattr("ai_intel.memory.embed.get_embedder", lambda: embedder)
+    # Pre-seed a low-saturation assessment so the proposer's gate passes
+    # without invoking the saturator's LLM call.
+    _seed_saturation(engine, tech.title, score=0.2)
 
     llm_response = _mock_llm(json.dumps({
         "idea": "CPU-only diffusion playground for indie designers who hate GPU bills",
@@ -217,11 +237,17 @@ def test_proposer_writes_idea_candidate(engine, embedder, monkeypatch):
 
 def test_proposer_skips_when_no_tech_signal(engine, embedder, monkeypatch):
     monkeypatch.setattr("ai_intel.memory.embed.get_embedder", lambda: embedder)
-    # No items seeded → tech_signal lookup returns None
-    with patch("ai_intel.agents.proposer.call_llm") as mock_llm:
+    # No items seeded → tech_signal lookup returns None across all retries
+    with patch("ai_intel.agents.proposer.call_llm") as mock_llm, \
+         patch("ai_intel.agents.saturator.call_llm") as mock_sat_llm:
         result = asyncio.run(proposer(engine, persona_id="paul_graham"))
     mock_llm.assert_not_called()
-    assert "no fresh tech signal" in result["summary"]
+    mock_sat_llm.assert_not_called()
+    # The message could be either "no fresh tech signal" or "every tech
+    # signal sampled" depending on the path; both are valid "skipped"
+    # outcomes.
+    summary = result["summary"]
+    assert ("no fresh tech signal" in summary) or ("nothing to propose" in summary)
 
 
 def test_proposer_handles_unparseable_output(engine, embedder, monkeypatch):
@@ -229,6 +255,7 @@ def test_proposer_handles_unparseable_output(engine, embedder, monkeypatch):
     pain = _seed_item(engine, title="p", source="pain_source", url="https://example.test/b")
     embed_pending(engine, embedder=embedder)
     monkeypatch.setattr("ai_intel.memory.embed.get_embedder", lambda: embedder)
+    _seed_saturation(engine, tech.title, score=0.2)
 
     with patch("ai_intel.agents.proposer.call_llm", return_value=_mock_llm("not json")):
         result = asyncio.run(proposer(
@@ -236,6 +263,25 @@ def test_proposer_handles_unparseable_output(engine, embedder, monkeypatch):
             tech_signal=tech, pain=pain,
         ))
     assert "unparseable" in result["summary"]
+    with Session(engine) as s:
+        rows = list(s.exec(select(IdeaCandidate)))
+    assert len(rows) == 0
+
+
+def test_proposer_refuses_saturated_signal(engine, embedder, monkeypatch):
+    """Explicit tech_signal in a saturated space should be rejected."""
+    tech = _seed_item(engine, title="AI customer support agents", source="hn", url="https://example.test/sat")
+    embed_pending(engine, embedder=embedder)
+    monkeypatch.setattr("ai_intel.memory.embed.get_embedder", lambda: embedder)
+    _seed_saturation(engine, tech.title, score=0.85)  # heavily crowded
+
+    with patch("ai_intel.agents.proposer.call_llm") as mock_llm:
+        result = asyncio.run(proposer(
+            engine, persona_id="paul_graham",
+            tech_signal=tech,
+        ))
+    mock_llm.assert_not_called()  # no draft attempted
+    assert "saturated" in result["summary"]
     with Session(engine) as s:
         rows = list(s.exec(select(IdeaCandidate)))
     assert len(rows) == 0
@@ -317,19 +363,40 @@ def test_evaluator_aggregates_to_killed(engine):
 
 
 def test_evaluator_aggregates_to_needs_work(engine):
+    """All persona subscores >= veto floor (55) and mean in [40, 75) →
+    needs_work."""
     cand = _seed_candidate(engine)
-    # Alternate between 80 and 30 → mean ≈ 55 → needs_work
+    # All 60s → mean 60, min 60. Min >= veto floor, mean < escalate.
     responses = iter([
         _mock_llm(json.dumps({"subscore": s, "critique": "x", "kill_criterion": "y", "would_fund_or_advise": False}))
-        for s in (80, 30, 80, 30, 80, 30)
+        for s in (60, 60, 60, 60, 60, 60)
     ])
     with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(responses)), \
          patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
         asyncio.run(evaluator(engine, candidate_id=cand.id))
     with Session(engine) as s:
         row = s.get(IdeaCandidate, cand.id)
-    assert row.evaluator_score == 55
+    assert row.evaluator_score == 60
     assert row.evaluator_verdict == "needs_work"
+
+
+def test_evaluator_dissent_veto_kills_high_mean(engine):
+    """Even with high mean, one persona < 55 should hard-kill."""
+    cand = _seed_candidate(engine)
+    # Five enthusiastic 80s + one dissenting 52 → mean 75.3, min 52.
+    # Without the veto rule this would escalate. With it, it gets killed.
+    responses = iter([
+        _mock_llm(json.dumps({"subscore": s, "critique": "x", "kill_criterion": "k", "would_fund_or_advise": False}))
+        for s in (80, 80, 80, 80, 80, 52)
+    ])
+    with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(responses)), \
+         patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
+        asyncio.run(evaluator(engine, candidate_id=cand.id))
+    with Session(engine) as s:
+        row = s.get(IdeaCandidate, cand.id)
+    assert row.evaluator_verdict == "killed"
+    # Score still computed as mean
+    assert row.evaluator_score == 75
 
 
 def test_evaluator_does_nothing_when_no_pending(engine):

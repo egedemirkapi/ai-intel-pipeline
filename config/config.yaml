@@ -50,6 +50,9 @@ sources:
     - reddit_aiagents
     # User-defined
     - watchlist
+    # Pain-source threads (Ask HN "what do you wish existed / biggest pain")
+    # — feeds the Phase 8 proposer with unmet-need signal alongside tech.
+    - pain_sources
     # Disabled (404):
     # - rss_a16z
     # - rss_anthropic

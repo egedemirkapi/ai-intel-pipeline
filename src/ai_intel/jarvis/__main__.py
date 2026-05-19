@@ -251,6 +251,10 @@ def _cmd_agents_run(args: argparse.Namespace) -> int:
         kw["candidate_id"] = args.candidate_id
     if args.batch_limit is not None:
         kw["batch_limit"] = args.batch_limit
+    if getattr(args, "n_candidates", None) is not None:
+        kw["n_candidates"] = args.n_candidates
+    if args.model:
+        kw["model"] = args.model
 
     try:
         result = asyncio.run(fn(engine, **kw))
@@ -381,11 +385,13 @@ def build_parser() -> argparse.ArgumentParser:
     atail.set_defaults(func=_cmd_agents_tail)
 
     arun = agents_sub.add_parser("run", help="Trigger one agent manually")
-    arun.add_argument("agent_id", help="saturator | proposer | evaluator")
+    arun.add_argument("agent_id", help="saturator | proposer | evaluator | weekly_ideation")
     arun.add_argument("--topic", help="(saturator) topic to assess")
     arun.add_argument("--persona", help="(proposer) persona_id to use, e.g. paul_graham")
     arun.add_argument("--candidate-id", type=int, help="(evaluator) specific IdeaCandidate id")
     arun.add_argument("--batch-limit", type=int, help="(evaluator) max candidates per run")
+    arun.add_argument("--n-candidates", type=int, help="(weekly_ideation) ideas to attempt")
+    arun.add_argument("--model", help="Override the LLM model id (e.g. claude-sonnet-4-6)")
     arun.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
     arun.set_defaults(func=_cmd_agents_run)
 

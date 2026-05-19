@@ -81,20 +81,46 @@ Scoring rubric (calibrate against this advisor's *actual* track record):
 - 0-39:   would advise against / kill"""
 
 
-def _aggregate(persona_critiques: dict[str, dict]) -> tuple[int, str]:
-    """Mean of subscores → verdict label."""
-    subs = [int(v.get("subscore", 0)) for v in persona_critiques.values()]
-    if not subs:
-        return 0, "killed"
+def _aggregate(
+    persona_critiques: dict[str, dict],
+    *,
+    veto_below: int = 55,
+    escalate_at: int = 75,
+    needs_work_at: int = 40,
+) -> tuple[int, str, int, str | None]:
+    """Aggregate persona subscores.
+
+    Returns (overall_score, verdict, min_subscore, vetoer_persona_id).
+
+    Rules:
+      1. If ANY persona subscore < ``veto_below`` → verdict='killed'
+         regardless of the mean. Dissent has veto power because at least
+         one critic spotted a fatal flaw.
+      2. Otherwise verdict by mean: ≥escalate_at → 'escalated',
+         ≥needs_work_at → 'needs_work', else 'killed'.
+    """
+    if not persona_critiques:
+        return 0, "killed", 0, None
+
+    items = [
+        (pid, int(v.get("subscore", 0)))
+        for pid, v in persona_critiques.items()
+    ]
+    subs = [s for _, s in items]
+    min_pid, min_sub = min(items, key=lambda kv: kv[1])
     mean = sum(subs) / len(subs)
     score = int(round(mean))
-    if score >= 75:
+
+    if min_sub < veto_below:
+        return score, "killed", min_sub, min_pid
+
+    if score >= escalate_at:
         verdict = "escalated"
-    elif score >= 40:
+    elif score >= needs_work_at:
         verdict = "needs_work"
     else:
         verdict = "killed"
-    return score, verdict
+    return score, verdict, min_sub, None
 
 
 def _load_candidate(engine, candidate_id: int) -> IdeaCandidate | None:
@@ -128,7 +154,7 @@ async def evaluator(
     *,
     candidate_id: int | None = None,
     batch_limit: int = 5,
-    model: str = "claude-sonnet-4-6",
+    model: str = "claude-haiku-4-5",
     escalate_threshold: int = 75,
     needs_work_threshold: int = 40,
 ):
@@ -218,15 +244,12 @@ async def evaluator(
             summaries.append(f"#{cid}: no critiques parsed")
             continue
 
-        score, verdict = _aggregate(persona_critiques)
-
-        # Override thresholds if the caller customized
-        if score >= escalate_threshold:
-            verdict = "escalated"
-        elif score >= needs_work_threshold:
-            verdict = "needs_work"
-        else:
-            verdict = "killed"
+        score, verdict, min_sub, vetoer = _aggregate(
+            persona_critiques,
+            veto_below=55,
+            escalate_at=escalate_threshold,
+            needs_work_at=needs_work_threshold,
+        )
 
         # Preserve the proposer detail blob alongside the new critiques
         merged_blob: dict = {}
@@ -248,7 +271,10 @@ async def evaluator(
             s.add(row)
             s.commit()
 
-        summaries.append(f"#{cid}: {score}/100 → {verdict}")
+        tag = f"#{cid}: mean={score}/100 min={min_sub}/100 → {verdict}"
+        if vetoer:
+            tag += f"  (vetoed by {vetoer})"
+        summaries.append(tag)
 
     return {
         "summary": "; ".join(summaries),
