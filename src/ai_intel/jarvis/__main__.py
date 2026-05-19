@@ -217,6 +217,99 @@ def _cmd_agents_tail(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_agents_run(args: argparse.Namespace) -> int:
+    """Trigger one agent manually for testing."""
+    import asyncio
+    from ai_intel.agents import AGENT_REGISTRY
+
+    if args.agent_id not in AGENT_REGISTRY:
+        print(
+            f"error: unknown agent {args.agent_id!r}. "
+            f"known: {', '.join(sorted(AGENT_REGISTRY))}",
+            file=sys.stderr,
+        )
+        return 1
+
+    db_path = Path(args.db) if args.db else DEFAULT_DB_PATH
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = _open_engine(db_path)
+    fn = AGENT_REGISTRY[args.agent_id]
+
+    # Build kwargs from CLI flags. Each agent reads what it needs.
+    kw: dict = {}
+    if args.topic:
+        kw["topic"] = args.topic
+    if args.persona:
+        kw["persona_id"] = args.persona
+    if args.candidate_id is not None:
+        kw["candidate_id"] = args.candidate_id
+    if args.batch_limit is not None:
+        kw["batch_limit"] = args.batch_limit
+
+    try:
+        result = asyncio.run(fn(engine, **kw))
+    except TypeError as exc:
+        print(f"error: agent {args.agent_id!r} rejected kwargs: {exc}", file=sys.stderr)
+        return 1
+    print(f"agent {args.agent_id!r} done.")
+    if result:
+        for k, v in result.items():
+            print(f"  {k}: {v}")
+    return 0
+
+
+def _cmd_ideas_list(args: argparse.Namespace) -> int:
+    """Show IdeaCandidate rows, filtered by score/status."""
+    import json as _json
+    from ai_intel.db.models import IdeaCandidate
+    from sqlmodel import Session, desc, select
+
+    db_path = Path(args.db) if args.db else DEFAULT_DB_PATH
+    if not db_path.exists():
+        print(f"error: no db at {db_path}", file=sys.stderr)
+        return 1
+    engine = _open_engine(db_path)
+
+    with Session(engine) as s:
+        q = select(IdeaCandidate).order_by(desc(IdeaCandidate.proposed_at))
+        if args.status:
+            q = q.where(IdeaCandidate.status == args.status)
+        rows = list(s.exec(q.limit(args.limit)))
+
+    if args.min_score is not None:
+        rows = [
+            r for r in rows
+            if r.evaluator_score is not None and r.evaluator_score >= args.min_score
+        ]
+
+    if not rows:
+        print("(no ideas match those filters)")
+        return 0
+
+    for r in rows:
+        score_str = f"{r.evaluator_score}/100" if r.evaluator_score is not None else "  —/100"
+        verdict = r.evaluator_verdict or r.status
+        when = r.proposed_at.strftime("%Y-%m-%d %H:%M") if r.proposed_at else "—"
+        print(f"#{r.id}  {when}  {score_str}  {verdict:<10}  {r.idea_text[:120]}")
+        if args.verbose and r.persona_critiques_json:
+            try:
+                blob = _json.loads(r.persona_critiques_json)
+            except _json.JSONDecodeError:
+                continue
+            detail = blob.pop("_proposer_detail", {})
+            if detail.get("wedge"):
+                print(f"     wedge:     {detail['wedge']}")
+            if detail.get("validation_step"):
+                print(f"     validate:  {detail['validation_step']}")
+            for pid, critique in blob.items():
+                if isinstance(critique, dict) and "subscore" in critique:
+                    print(
+                        f"     {pid:<14} {critique.get('subscore', '?')}/100  "
+                        f"{(critique.get('critique', '') or '')[:120]}"
+                    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ai_intel.jarvis",
@@ -280,6 +373,26 @@ def build_parser() -> argparse.ArgumentParser:
     atail.add_argument("--completed-only", action="store_true", help="Only the latest completed run")
     atail.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
     atail.set_defaults(func=_cmd_agents_tail)
+
+    arun = agents_sub.add_parser("run", help="Trigger one agent manually")
+    arun.add_argument("agent_id", help="saturator | proposer | evaluator")
+    arun.add_argument("--topic", help="(saturator) topic to assess")
+    arun.add_argument("--persona", help="(proposer) persona_id to use, e.g. paul_graham")
+    arun.add_argument("--candidate-id", type=int, help="(evaluator) specific IdeaCandidate id")
+    arun.add_argument("--batch-limit", type=int, help="(evaluator) max candidates per run")
+    arun.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
+    arun.set_defaults(func=_cmd_agents_run)
+
+    ideas = sub.add_parser("ideas", help="Inspect IdeaCandidate rows")
+    ideas_sub = ideas.add_subparsers(dest="ideas_cmd", required=True)
+
+    ilist = ideas_sub.add_parser("list", help="List candidate ideas")
+    ilist.add_argument("-n", "--limit", type=int, default=20)
+    ilist.add_argument("--status", help="proposed | killed | needs_work | escalated")
+    ilist.add_argument("--min-score", type=int, help="Only show ideas at or above this evaluator score")
+    ilist.add_argument("-v", "--verbose", action="store_true", help="Show full critique chain")
+    ilist.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
+    ilist.set_defaults(func=_cmd_ideas_list)
 
     return p
 

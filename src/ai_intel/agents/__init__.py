@@ -1,6 +1,6 @@
 """Agent fleet — runtime, observability, and individual workers.
 
-Phase 7 (this commit): runtime + observability + @agent decorator.
+Phase 7: runtime + observability + @agent decorator.
 Phase 8: saturator / proposer / evaluator workers.
 
 Public surface:
@@ -8,22 +8,37 @@ Public surface:
     call_llm(...)            — cost-aware OAuth-first LLM router
     recent_runs(agent_id)    — observability query
     summary_for_user()       — human-readable fleet status line
+
+    saturator(engine, topic=...)        — assess saturation for a topic
+    proposer(engine, persona_id=...)    — draft one IdeaCandidate
+    evaluator(engine, candidate_id=...) — multi-persona critique + score
 """
 from ai_intel.agents.decorator import agent
+from ai_intel.agents.evaluator import evaluator
 from ai_intel.agents.observability import (
     recent_runs,
     last_completed,
     summary_for_user,
 )
+from ai_intel.agents.proposer import proposer
 from ai_intel.agents.runtime import (
     AuthMode,
     LLMResponse,
     call_llm,
     estimate_cost_usd,
 )
+from ai_intel.agents.saturator import saturator
+
+# Registry so the CLI can look up agents by id without static if/else.
+AGENT_REGISTRY = {
+    "saturator": saturator,
+    "proposer":  proposer,
+    "evaluator": evaluator,
+}
 
 __all__ = [
     "agent",
+    "AGENT_REGISTRY",
     "AuthMode",
     "LLMResponse",
     "call_llm",
@@ -31,4 +46,7 @@ __all__ = [
     "recent_runs",
     "last_completed",
     "summary_for_user",
+    "saturator",
+    "proposer",
+    "evaluator",
 ]
