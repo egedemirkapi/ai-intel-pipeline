@@ -56,6 +56,10 @@ class JarvisVoice:
         self.hotkeys = None
         self.speak_poller = None
         self.context_poller = None
+        # Half-duplex gate: while Jarvis is speaking, the mic must ignore
+        # everything — otherwise it hears its own voice and the clap /
+        # wake detectors re-trigger in an infinite feedback loop.
+        self._muted = False
 
         # Worker thread for the slow STT→chat→TTS pipeline.
         self._work: queue.Queue = queue.Queue()
@@ -116,7 +120,7 @@ class JarvisVoice:
         try:
             self.tts = Speaker(
                 engine=tc["engine"], rate=tc["rate"], piper_voice_path=piper_path,
-                on_state=self._post_voice_state,
+                on_state=self._on_tts_state,
             )
         except Exception as exc:
             logger.error("voice: TTS failed to start: %s", exc)
@@ -135,7 +139,7 @@ class JarvisVoice:
                     max_utterance_s=wc["max_utterance_s"],
                     on_wake=lambda: self._post_voice_state("listening"),
                 )
-                self.mic.add_listener(self.wake.feed)
+                self.mic.add_listener(self._gated(self.wake.feed))
                 logger.info("voice: wake word ready")
             except Exception as exc:
                 logger.error("voice: wake word unavailable: %s", exc)
@@ -152,7 +156,7 @@ class JarvisVoice:
                     max_gap_ms=cc["max_gap_ms"],
                     cooldown_s=cc["cooldown_s"],
                 )
-                self.mic.add_listener(self.clap.feed)
+                self.mic.add_listener(self._gated(self.clap.feed))
                 logger.info("voice: two-clap detector ready")
             except Exception as exc:
                 logger.error("voice: clap detector unavailable: %s", exc)
@@ -347,6 +351,29 @@ class JarvisVoice:
             return
         logger.info("speaking (proactive): %s", text[:80])
         self.tts.speak(text)
+
+    def _gated(self, feed):
+        """Wrap a detector's feed so it drops audio while Jarvis is
+        speaking — stops the mic hearing Jarvis's own voice and looping."""
+        def wrapped(frame):
+            if not self._muted:
+                feed(frame)
+        return wrapped
+
+    def _on_tts_state(self, state: str) -> None:
+        """Speaker state callback. Mutes the mic for the whole time
+        Jarvis is speaking (half-duplex — kills the feedback loop), and
+        reports the state to the Brain for the dashboard orb."""
+        if state == "speaking":
+            self._muted = True
+        elif state == "idle":
+            # Small tail so the end of speech + room echo doesn't
+            # immediately re-trigger the detectors on un-mute.
+            threading.Timer(0.8, self._unmute).start()
+        self._post_voice_state(state)
+
+    def _unmute(self) -> None:
+        self._muted = False
 
     def _post_voice_state(self, state: str) -> None:
         """Report Jarvis's voice state to the Brain so the dashboard orb
