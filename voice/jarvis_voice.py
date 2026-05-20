@@ -19,6 +19,7 @@ import logging
 import queue
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -53,6 +54,7 @@ class JarvisVoice:
         self.stt = None
         self.tts = None
         self.hotkeys = None
+        self.speak_poller = None
 
         # Worker thread for the slow STT→chat→TTS pipeline.
         self._work: queue.Queue = queue.Queue()
@@ -118,6 +120,17 @@ class JarvisVoice:
         self.hotkeys = HotkeyBinder(self.brain_url, self._on_hotkey)
         self.hotkeys.start()
 
+        # Proactive speech — poll the Brain's speak queue so Jarvis can
+        # talk unprompted (the scheduled briefing, live fleet narration).
+        speak_cfg = self.cfg.get("speak", {})
+        if speak_cfg.get("poll_enabled", True):
+            from voice.speakpoller import SpeakPoller
+            self.speak_poller = SpeakPoller(
+                self.brain_url, self._on_speak,
+                interval_s=speak_cfg.get("poll_interval_s", 4.0),
+            )
+            self.speak_poller.start()
+
         self._worker.start()
         self.mic.start()
         logger.info(
@@ -129,6 +142,8 @@ class JarvisVoice:
             self.mic.stop()
         if self.hotkeys:
             self.hotkeys.stop()
+        if self.speak_poller:
+            self.speak_poller.stop()
         self._work.put(None)  # sentinel to end the worker
 
     # ─── Detector callbacks (run on the mic-dispatch thread) ────────
@@ -145,6 +160,10 @@ class JarvisVoice:
         """Global hotkey pressed — hand off to worker."""
         self._work.put(("workflow", workflow_name))
 
+    def _on_speak(self, text: str, kind: str = "manual") -> None:
+        """The Brain queued something for Jarvis to say — hand to worker."""
+        self._work.put(("speak", text))
+
     # ─── Worker thread ──────────────────────────────────────────────
 
     def _worker_loop(self) -> None:
@@ -160,6 +179,8 @@ class JarvisVoice:
                     self._handle_clap()
                 elif kind == "workflow":
                     self._handle_workflow(payload)
+                elif kind == "speak":
+                    self._handle_speak(payload)
             except Exception as exc:  # pragma: no cover
                 logger.exception("worker job %s failed: %s", kind, exc)
 
@@ -201,14 +222,32 @@ class JarvisVoice:
 
     def _handle_clap(self) -> None:
         logger.info("two-clap → /trigger/clap")
+        fired: list = []
         try:
             r = httpx.post(f"{self.brain_url}/trigger/clap", timeout=60.0)
             r.raise_for_status()
             fired = r.json().get("fired") or []
-            self.tts.speak("Done." if fired else "No clap routine is set up.")
         except Exception as exc:
             logger.warning("clap trigger failed: %s", exc)
             self.tts.speak("Sorry, that failed.")
+            return
+        # The clap is also the "welcome" gesture — read the briefing aloud.
+        if self.cfg.get("clap", {}).get("speak_brief", True):
+            spoken = self._fetch_brief_spoken()
+            if spoken:
+                self.tts.speak(spoken)
+                return
+        self.tts.speak("Done." if fired else "No clap routine is set up.")
+
+    def _fetch_brief_spoken(self) -> str:
+        """GET /brief and return its spoken summary (empty string on error)."""
+        try:
+            r = httpx.get(f"{self.brain_url}/brief", timeout=60.0)
+            r.raise_for_status()
+            return r.json().get("spoken", "")
+        except Exception as exc:
+            logger.debug("brief fetch failed: %s", exc)
+            return ""
 
     def _handle_workflow(self, name: str) -> None:
         logger.info("hotkey → firing workflow %r", name)
@@ -217,6 +256,25 @@ class JarvisVoice:
             r.raise_for_status()
         except Exception as exc:
             logger.warning("hotkey workflow %s failed: %s", name, exc)
+
+    def _is_quiet_now(self) -> bool:
+        """True if the current local hour falls in configured quiet hours."""
+        qh = (self.cfg.get("speak") or {}).get("quiet_hours") or {}
+        start, end = qh.get("start"), qh.get("end")
+        if start is None or end is None:
+            return False
+        hour = datetime.now().hour
+        if start <= end:
+            return start <= hour < end
+        return hour >= start or hour < end  # window wraps midnight
+
+    def _handle_speak(self, text: str) -> None:
+        """Speak a Brain-queued utterance — suppressed during quiet hours."""
+        if self._is_quiet_now():
+            logger.info("quiet hours — suppressing proactive speech")
+            return
+        logger.info("speaking (proactive): %s", text[:80])
+        self.tts.speak(text)
 
     def _ask_brain(self, message: str) -> str:
         try:

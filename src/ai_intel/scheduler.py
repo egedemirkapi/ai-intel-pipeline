@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import httpx
 import yaml
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -53,6 +54,28 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
         summary = run_daily_maintenance(engine)
         logger.info("Maintenance prune: %s", summary)
 
+    brief_cfg = config.get("briefing", {}) or {}
+    brain_url = brief_cfg.get("brain_url", "http://127.0.0.1:9999").rstrip("/")
+
+    async def briefing_job():
+        # Assemble the daily brief and hand it to the Brain's speak queue;
+        # the voice tray polls that queue and reads it aloud. Degrades
+        # quietly if the Brain isn't running.
+        from ai_intel.think.brief import build_brief
+        brief = await build_brief(engine)
+        spoken = brief.get("spoken", "")
+        if not spoken:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    f"{brain_url}/speak",
+                    json={"text": spoken, "kind": "briefing"},
+                )
+            logger.info("Briefing queued for the voice tray")
+        except Exception as exc:
+            logger.warning("Briefing push failed (is the Brain running?): %s", exc)
+
     sched.add_job(collect_job, "interval", minutes=5, id="collect", misfire_grace_time=60)
     sched.add_job(
         enrich_job, "interval", minutes=5, id="enrich",
@@ -64,4 +87,10 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
         maintenance_job, "cron", hour=4, minute=0,
         id="maintenance", misfire_grace_time=3600,
     )
+    if brief_cfg.get("enabled", True):
+        sched.add_job(
+            briefing_job, "cron",
+            hour=brief_cfg.get("hour", 6), minute=brief_cfg.get("minute", 0),
+            id="briefing", misfire_grace_time=600,
+        )
     return sched

@@ -5,6 +5,14 @@ delivery:
   digest_window_hours: 2
   schedule_cron: "0 */2 * * *"
 
+# Proactive spoken briefing — the scheduler assembles the brief at this
+# UTC hour and hands it to the Brain's speak queue; the voice tray reads
+# it aloud (subject to its own quiet-hours in voice/config.yaml).
+briefing:
+  enabled: true
+  hour: 6           # UTC hour (e.g. 6 UTC ≈ 9am in GMT+3)
+  minute: 0
+
 llm:
   enrichment_model: claude-haiku-4-5-20251001
   # Haiku 4.5 as analyst — MAX-plan Opus AND Sonnet quotas were both 429ing

@@ -24,6 +24,8 @@ Routes:
     GET  /interests         list the user's interests
     POST /interests         add an interest
     DEL  /interests/{id}    remove an interest
+    POST /speak             queue an utterance for the voice tray
+    GET  /speak/pending     drain the speak queue (voice tray polls this)
     WS   /events            live FleetEvent stream
 
 Everything is read-only by default; writes happen via the /chat tool
@@ -46,6 +48,7 @@ from sqlmodel import Session, desc, select
 
 from ai_intel.brain.chat import run_chat
 from ai_intel.brain.events import FleetEvent, get_event_bus
+from ai_intel.brain.speak import get_speak_queue, narration_for
 from ai_intel.db.models import (
     AgentRun,
     IdeaCandidate,
@@ -86,11 +89,32 @@ class VoiceTrigger(BaseModel):
 class InterestCreate(BaseModel):
     text: str
 
+
+class SpeakRequest(BaseModel):
+    text: str
+    kind: str = "manual"
+
 logger = logging.getLogger(__name__)
 
 # Engine path resolved at startup. Override via env JARVIS_DB_PATH for tests.
 import os
 _DB_PATH = Path(os.getenv("JARVIS_DB_PATH", "data/items.db"))
+
+
+async def _narrator_loop(bus, speak_queue) -> None:
+    """Subscribe to the fleet event bus and push narration-worthy events
+    into the speak queue so the voice tray can announce them."""
+    q = await bus.subscribe()
+    try:
+        while True:
+            event = await q.get()
+            phrase = narration_for(event)
+            if phrase:
+                speak_queue.push(phrase, kind="narration")
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await bus.unsubscribe(q)
 
 
 @asynccontextmanager
@@ -100,9 +124,12 @@ async def _lifespan(app: FastAPI):
     init_db(engine)
     app.state.engine = engine
     app.state.bus = get_event_bus()
+    app.state.speak_queue = get_speak_queue()
+    narrator = asyncio.create_task(_narrator_loop(app.state.bus, app.state.speak_queue))
     logger.info("brain: engine ready at %s; bus subscribers=%d",
                 _DB_PATH, app.state.bus.subscriber_count)
     yield
+    narrator.cancel()
     # No engine.dispose() needed for SQLite + WAL; connections close with process.
 
 
@@ -483,6 +510,19 @@ def create_app() -> FastAPI:
         if not delete_interest(app.state.engine, note_id):
             raise HTTPException(status_code=404, detail=f"no interest id={note_id}")
         return {"deleted": note_id}
+
+    # ─── Proactive speech (Brain → voice tray reverse channel) ──────
+    @app.post("/speak")
+    def speak_push(req: SpeakRequest) -> dict[str, Any]:
+        """Queue an utterance for the voice tray to speak."""
+        queued = app.state.speak_queue.push(req.text, kind=req.kind)
+        return {"queued": queued, "pending": app.state.speak_queue.pending}
+
+    @app.get("/speak/pending")
+    def speak_pending() -> dict[str, Any]:
+        """Drain the speak queue — the voice tray polls this."""
+        items = app.state.speak_queue.drain()
+        return {"utterances": [u.to_dict() for u in items]}
 
     # ─── WebSocket /events ──────────────────────────────────────────
     @app.websocket("/events")

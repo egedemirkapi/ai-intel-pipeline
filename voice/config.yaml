@@ -29,6 +29,17 @@ clap:
   min_gap_ms: 150           # ignore double-counts inside one clap
   max_gap_ms: 550           # two transients within this = a deliberate double-clap
   cooldown_s: 5.0           # ignore claps for this long after a trigger
+  speak_brief: true         # a two-clap also reads your briefing aloud (welcome ritual)
+
+speak:
+  # Proactive speech — lets Jarvis talk WITHOUT a wake word: the
+  # scheduled daily briefing and live fleet narration. The tray polls
+  # the Brain's speak queue for these.
+  poll_enabled: true
+  poll_interval_s: 4        # how often to check the Brain's speak queue
+  quiet_hours:              # no proactive speech inside this local-time window
+    start: 22               # 24h clock; 22 = 10pm
+    end: 8                  #            8  = 8am
 
 stt:
   # faster-whisper model size: tiny | base | small | medium
