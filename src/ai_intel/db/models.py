@@ -128,9 +128,40 @@ class IdeaCandidate(SQLModel, table=True):
     idea_text: str
     tech_basis: Optional[str] = None
     pain_basis_cluster_id: Optional[int] = Field(default=None, foreign_key="paincluster.id")
+    trend_synthesis_id: Optional[int] = Field(default=None, foreign_key="trendsynthesis.id")
     evaluator_score: Optional[int] = None  # 0-100
-    evaluator_verdict: Optional[str] = None  # "killed" | "needs_work" | "escalated"
+    evaluator_verdict: Optional[str] = None  # "killed" | "needs_work" | "escalated" | "borderline"
     persona_critiques_json: Optional[str] = None  # {pid: {score, comment}, ...}
     failure_parallels_json: Optional[str] = None  # cite ≥2 from failure_corpus
     status: str = Field(default="proposed", index=True)
-    # proposed | killed | needs_work | escalated | shown
+    # proposed | killed | needs_work | escalated | borderline | shown
+
+
+# ─── Phase 9: ecosystem-level reasoning ───────────────────────────────
+#
+# The proposer historically picked ONE recent item and reasoned around it.
+# That's reactive. TrendSynthesis is the table where the Synthesizer
+# agent records ecosystem-level patterns it sees across the last N days
+# of intel — convergent shifts, new capabilities becoming possible, and
+# what those shifts converge with. The proposer can then reason about a
+# TREND instead of a single news headline.
+
+
+class TrendSynthesis(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    generated_at: datetime = Field(index=True)
+    # Window of intel items the synthesis is computed over
+    window_start: datetime
+    window_end: datetime
+    # The cluster: a named topic and the items that belong to it
+    cluster_label: str = Field(index=True)
+    member_item_ids_json: Optional[str] = None  # JSON list[int] of Item ids
+    # The reasoning chain — what's actually shifting + what becomes possible
+    underlying_shift: Optional[str] = None
+    new_capability: Optional[str] = None
+    momentum: Optional[str] = None  # rising_fast | steady_rising | stable | slowing
+    convergence_with_json: Optional[str] = None  # JSON list[str] of other cluster_labels
+    # Full LLM output for debugging / future schema migration
+    raw_llm_json: Optional[str] = None
+    status: str = Field(default="active", index=True)
+    # active | stale | deprecated

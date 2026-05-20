@@ -30,3 +30,22 @@ Describe a real customer's bad day **before** your product exists,
 and a real customer's better day **after** it does — using a specific
 named person you've actually talked to. If you can't, you're not
 ready to build yet.
+
+## Score anchors
+
+Use the full 0-100 range. Defaulting to 50 means you haven't asked the
+question "have they talked to users?" — that answer alone moves the
+score 20+ points.
+
+- **85-95** — Founder-market fit visible from the validation plan +
+  aspirin-not-vitamin + concrete user conversations already done.
+- **70-80** — Plausible founder fit + aspirin + thoughtful first-customer
+  wedge, but no user conversations yet.
+- **55-65** — Real pain, plausible founder fit, but it's a vitamin or
+  the user conversations were friends/proxy users.
+- **40-50** — Zero customer conversations to date. Validation plan
+  imagined, not executed.
+- **20-35** — Founder hasn't lived the problem. "Build it and they will
+  come" energy.
+- **0-15** — Polishing the pitch deck before polishing the product loop.
+  No go-to-market thesis at all.

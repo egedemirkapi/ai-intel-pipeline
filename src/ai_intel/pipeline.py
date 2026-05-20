@@ -83,7 +83,7 @@ async def generate_and_send_digest(
     output_dir: Path,
     window_hours: int,
     model: str,
-    email_to: str,
+    email_to: str | list[str],
 ) -> dict:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(hours=window_hours)
@@ -142,7 +142,8 @@ async def generate_and_send_digest(
             items_considered=digest["items_considered"],
             items_selected=len(digest["top_items"]),
             summary=digest["summary"], pdf_path=str(pdf_path),
-            sent_at=now, sent_to=email_to,
+            sent_at=now,
+            sent_to=", ".join(email_to) if isinstance(email_to, list) else email_to,
         ))
         s.commit()
 

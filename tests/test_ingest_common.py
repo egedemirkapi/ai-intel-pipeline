@@ -185,14 +185,24 @@ def test_pg_fetch_essay_rejects_thin_body(httpx_mock):
 # ---------------------------------------------------------------------------
 
 
-ALTMAN_ARCHIVE_HTML = """
-<html><body>
-<a href="/the-merge">The Merge</a>
-<a href="/superintelligence">Superintelligence</a>
-<a href="/archive">Archive</a>
-<a href="/feed">RSS</a>
-<a href="/about">About</a>
-</body></html>
+ALTMAN_ATOM_PAGE1 = """<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Sam Altman</title>
+  <entry>
+    <title>The Merge</title>
+    <link href="https://blog.samaltman.com/the-merge"/>
+  </entry>
+  <entry>
+    <title>Superintelligence</title>
+    <link href="https://blog.samaltman.com/superintelligence"/>
+  </entry>
+</feed>
+"""
+
+ALTMAN_ATOM_EMPTY = """<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Sam Altman</title>
+</feed>
 """
 
 ALTMAN_POST_HTML = """
@@ -206,15 +216,24 @@ ALTMAN_POST_HTML = """
 
 
 def test_altman_archive_links(httpx_mock):
-    from scripts.ingest_altman import ARCHIVE_URL, fetch_archive_links
+    """fetch_archive_links walks paginated Atom feeds and dedupes entries.
+
+    The scraper switched from parsing /archive HTML to walking
+    /posts.atom?page=N after Posthaven moved the archive index behind
+    a JS-rendered Algolia widget (see ingest_altman.py for context).
+    """
+    from scripts.ingest_altman import ATOM_URL, fetch_archive_links
     from scripts._common import make_client
 
-    httpx_mock.add_response(url=ARCHIVE_URL, text=ALTMAN_ARCHIVE_HTML)
+    # Page 1 returns two entries; page 2 returns an empty feed, ending the walk.
+    httpx_mock.add_response(url=f"{ATOM_URL}?page=1", text=ALTMAN_ATOM_PAGE1)
+    httpx_mock.add_response(url=f"{ATOM_URL}?page=2", text=ALTMAN_ATOM_EMPTY)
+
     with make_client() as client:
         urls = fetch_archive_links(client)
     assert "https://blog.samaltman.com/the-merge" in urls
     assert "https://blog.samaltman.com/superintelligence" in urls
-    # boilerplate filtered
+    # No boilerplate URLs leak through
     assert not any(u.endswith("/archive") for u in urls)
     assert not any(u.endswith("/feed") for u in urls)
     assert not any(u.endswith("/about") for u in urls)

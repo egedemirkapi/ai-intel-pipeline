@@ -11,9 +11,9 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterator
-from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -30,42 +30,53 @@ from scripts._common import (
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://blog.samaltman.com"
-ARCHIVE_URL = f"{BASE_URL}/archive"
+ATOM_URL = f"{BASE_URL}/posts.atom"
+ATOM_NS = "{http://www.w3.org/2005/Atom}"
 AUTHOR = "Sam Altman"
 
 
-def fetch_archive_links(client) -> list[str]:
-    """Return absolute URLs of every blog post in the archive."""
-    r = client.get(ARCHIVE_URL)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
-    urls: list[str] = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        # Posthaven post URLs follow /<slug> where slug != archive/page/feed
-        # and typically contain a hyphen or year-like marker.
-        if href.startswith("http"):
-            if not href.startswith(BASE_URL):
-                continue
-            path = href[len(BASE_URL):]
-        else:
-            path = href
-        if path in ("", "/", "/archive", "/feed", "/about"):
-            continue
-        if re.match(r"^/(archive|feed|about|page|tag|category)(/|$)", path):
-            continue
-        if not path.startswith("/"):
-            continue
-        # Looks like a post slug
-        urls.append(urljoin(BASE_URL, path))
-    # Dedupe preserving order
+def fetch_archive_links(client, max_pages: int = 20) -> list[str]:
+    """Return absolute URLs of every Altman blog post.
+
+    Posthaven's HTML archive is JS-rendered via Algolia and serves no
+    post links in the static markup, but the Atom feed at
+    ``/posts.atom`` is paginated and gives 30 entries per page. Walking
+    ``?page=1..N`` until a page returns 0 entries reliably enumerates
+    the full archive (~121 posts as of 2026-05).
+    """
     seen: set[str] = set()
     out: list[str] = []
-    for u in urls:
-        if u in seen:
-            continue
-        seen.add(u)
-        out.append(u)
+    for page in range(1, max_pages + 1):
+        url = f"{ATOM_URL}?page={page}"
+        try:
+            r = client.get(url)
+            r.raise_for_status()
+        except Exception as exc:
+            logger.warning("Atom page %d failed: %s — stopping", page, exc)
+            break
+        try:
+            root = ET.fromstring(r.text)
+        except ET.ParseError as exc:
+            logger.warning("Atom page %d unparseable: %s — stopping", page, exc)
+            break
+        entries = root.findall(f"{ATOM_NS}entry")
+        new_on_page = 0
+        for entry in entries:
+            link = entry.find(f"{ATOM_NS}link")
+            if link is None:
+                continue
+            href = (link.get("href") or "").strip()
+            if not href.startswith(BASE_URL):
+                continue
+            if href in seen:
+                continue
+            seen.add(href)
+            out.append(href)
+            new_on_page += 1
+        if new_on_page == 0:
+            break
+        if page > 1:
+            throttle()
     return out
 
 

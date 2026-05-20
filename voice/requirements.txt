@@ -1,0 +1,33 @@
+# Jarvis voice tray dependencies.
+#
+# Kept SEPARATE from the core project's pyproject.toml because these
+# are heavy (faster-whisper pulls CTranslate2 ~200MB; openWakeWord
+# pulls onnxruntime) and voice is an opt-in feature.
+#
+# Install into the project venv:
+#   .\.venv\Scripts\python.exe -m pip install -r voice/requirements.txt
+
+# UI — system tray
+PyQt6>=6.6.0
+
+# Audio capture
+sounddevice>=0.4.6
+
+# Wake word — ships a pretrained "hey_jarvis" model
+openwakeword>=0.6.0
+
+# Speech-to-text — local Whisper via CTranslate2
+faster-whisper>=1.0.0
+
+# Text-to-speech — Windows SAPI5 (local, no model download)
+pyttsx3>=2.90
+
+# HTTP to the Brain + config
+httpx>=0.27.0
+pyyaml>=6.0
+
+# Optional desktop notifications (used by the notify workflow action)
+windows-toasts>=1.1.0 ; sys_platform == "win32"
+
+# Global hotkeys — binds a workflow's trigger.hotkey system-wide
+keyboard>=0.13.5

@@ -23,6 +23,7 @@ from ai_intel.db.models import (
     IdeaCandidate,
     Item,
     SaturationAssessment,
+    TrendSynthesis,
 )
 
 
@@ -288,6 +289,117 @@ def test_proposer_refuses_saturated_signal(engine, embedder, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Synthesizer-trend wiring (Phase 9)
+# ---------------------------------------------------------------------------
+
+
+def _seed_trend(
+    engine,
+    *,
+    cluster_label: str,
+    member_item_ids: list[int],
+    momentum: str = "rising_fast",
+    status: str = "active",
+    underlying_shift: str = "AI is shifting from chatbots to autonomous agents.",
+    new_capability: str = "Founders can build agents that act, not just answer.",
+) -> TrendSynthesis:
+    now = datetime.now(timezone.utc)
+    row = TrendSynthesis(
+        generated_at=now,
+        window_start=now - timedelta(days=14),
+        window_end=now,
+        cluster_label=cluster_label,
+        member_item_ids_json=json.dumps(member_item_ids),
+        underlying_shift=underlying_shift,
+        new_capability=new_capability,
+        momentum=momentum,
+        convergence_with_json=json.dumps([]),
+        status=status,
+    )
+    with Session(engine) as s:
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+    return row
+
+
+def test_pick_trend_returns_none_when_empty(engine):
+    """No trends in DB → _pick_trend returns None so caller can fall back."""
+    from ai_intel.agents.proposer import _pick_trend
+    assert _pick_trend(engine) is None
+
+
+def test_pick_trend_filters_to_active(engine):
+    """_pick_trend must not return stale or deprecated trends."""
+    from ai_intel.agents.proposer import _pick_trend
+    item = _seed_item(engine, title="Anchor item", source="hn", url="https://example.test/anchor")
+    _seed_trend(engine, cluster_label="stale-trend", member_item_ids=[item.id], status="stale")
+    _seed_trend(engine, cluster_label="active-trend", member_item_ids=[item.id], status="active")
+    picked = _pick_trend(engine)
+    assert picked is not None
+    assert picked.cluster_label == "active-trend"
+
+
+def test_proposer_writes_idea_candidate_in_trend_mode(engine, embedder, monkeypatch):
+    """When proposer is called with an explicit trend, the resulting
+    IdeaCandidate records the trend linkage + the proposer reasons about
+    the cluster_label/new_capability instead of a single item title."""
+    member = _seed_item(
+        engine,
+        title="Open-source MoE inference lands on consumer GPUs",
+        source="hn",
+        url="https://example.test/moe",
+    )
+    embed_pending(engine, embedder=embedder)
+    monkeypatch.setattr("ai_intel.memory.embed.get_embedder", lambda: embedder)
+
+    trend = _seed_trend(
+        engine,
+        cluster_label="Local MoE inference becomes viable",
+        member_item_ids=[member.id],
+        momentum="rising_fast",
+        new_capability="Indie game devs can run frontier-class dialogue locally.",
+    )
+
+    llm_response = _mock_llm(json.dumps({
+        "pattern_recognized": "MoE landing in consumer-GPU runtimes",
+        "gap_identified": "indie devs without cloud budgets need local LLMs",
+        "failure_pattern_avoided": "ScaleFactor: scoped too broadly — we narrow to game dialogue",
+        "idea": "Local MoE plugin for Unreal Engine NPC dialogue",
+        "tech_basis": "Local MoE inference",
+        "pain_basis": "cloud LLM costs kill indie dev experiments",
+        "wedge": "RTX-4070 indie devs already using llama.cpp",
+        "key_assumption": "30% latency vs cloud is acceptable for offline dialogue",
+        "validation_step": "ship 5 demos to indie dev discord servers, measure pilot conversions",
+        "why_now": "MoE GGUFs landed in llama.cpp last 60 days",
+        "differentiation": "narrower than Modular's Mojo; game-engine-native not infra-only",
+    }))
+
+    with patch("ai_intel.agents.proposer.call_llm", return_value=llm_response):
+        result = asyncio.run(proposer(
+            engine,
+            persona_id="paul_graham",
+            trend=trend,
+        ))
+    assert "Local MoE plugin" in result["summary"]
+
+    with Session(engine) as s:
+        rows = list(s.exec(select(IdeaCandidate)))
+    assert len(rows) == 1
+    cand = rows[0]
+    assert cand.trend_synthesis_id == trend.id
+    assert cand.tech_basis == "Local MoE inference"
+    detail = json.loads(cand.persona_critiques_json)["_proposer_detail"]
+    assert detail["input_mode"] == "trend"
+    assert detail["trend_id"] == trend.id
+    assert detail["trend_label"] == "Local MoE inference becomes viable"
+    assert detail["trend_momentum"] == "rising_fast"
+    # In trend mode, saturation is not invoked — the proposer's
+    # tech_signal_url should fall back to the first member's URL
+    assert detail["tech_signal_url"] == member.url
+
+
+# ---------------------------------------------------------------------------
 # evaluator
 # ---------------------------------------------------------------------------
 
@@ -380,11 +492,15 @@ def test_evaluator_aggregates_to_needs_work(engine):
     assert row.evaluator_verdict == "needs_work"
 
 
-def test_evaluator_dissent_veto_kills_high_mean(engine):
-    """Even with high mean, one persona < 55 should hard-kill."""
+def test_evaluator_dissent_veto_high_mean_becomes_borderline(engine):
+    """Dissent veto + mean ≥ borderline_above (60) → 'borderline', not 'killed'.
+
+    Five enthusiastic 80s + one dissenting 52 → mean 75.3, min 52.
+    Without the veto rule this would escalate; with the rule alone it would
+    kill; with the borderline tier on top, it lands in 'borderline' so the
+    user can review the critique without an outright kill.
+    """
     cand = _seed_candidate(engine)
-    # Five enthusiastic 80s + one dissenting 52 → mean 75.3, min 52.
-    # Without the veto rule this would escalate. With it, it gets killed.
     responses = iter([
         _mock_llm(json.dumps({"subscore": s, "critique": "x", "kill_criterion": "k", "would_fund_or_advise": False}))
         for s in (80, 80, 80, 80, 80, 52)
@@ -394,9 +510,30 @@ def test_evaluator_dissent_veto_kills_high_mean(engine):
         asyncio.run(evaluator(engine, candidate_id=cand.id))
     with Session(engine) as s:
         row = s.get(IdeaCandidate, cand.id)
-    assert row.evaluator_verdict == "killed"
+    assert row.evaluator_verdict == "borderline"
     # Score still computed as mean
     assert row.evaluator_score == 75
+
+
+def test_evaluator_dissent_veto_low_mean_still_kills(engine):
+    """Dissent veto AND mean < borderline_above (60) → 'killed'.
+
+    Three middling 60s + three dissenting 38s → mean 49, min 38.
+    Multiple critics independently scored low → the mean itself is mediocre
+    → no borderline rescue applies.
+    """
+    cand = _seed_candidate(engine)
+    responses = iter([
+        _mock_llm(json.dumps({"subscore": s, "critique": "x", "kill_criterion": "k", "would_fund_or_advise": False}))
+        for s in (60, 60, 60, 38, 38, 38)
+    ])
+    with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(responses)), \
+         patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
+        asyncio.run(evaluator(engine, candidate_id=cand.id))
+    with Session(engine) as s:
+        row = s.get(IdeaCandidate, cand.id)
+    assert row.evaluator_verdict == "killed"
+    assert row.evaluator_score == 49
 
 
 def test_evaluator_does_nothing_when_no_pending(engine):

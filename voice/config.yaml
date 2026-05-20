@@ -1,0 +1,45 @@
+# Jarvis voice tray configuration.
+
+brain:
+  # The Jarvis Brain HTTP endpoint. Local by default.
+  base_url: "http://127.0.0.1:9999"
+  # Workflow fired by a two-clap gesture.
+  clap_workflow: "clap_default"
+
+audio:
+  sample_rate: 16000        # openWakeWord + faster-whisper both want 16k
+  block_ms: 80              # mic read block size in milliseconds
+  input_device: null        # null = system default mic
+
+wake:
+  # openWakeWord ships a pretrained "hey_jarvis" model — no training needed.
+  model: "hey_jarvis"
+  threshold: 0.5            # 0-1; raise to cut false positives
+  # After the wake word fires, capture speech until this much silence.
+  silence_ms: 800
+  max_utterance_s: 12       # hard cap on a single captured utterance
+
+clap:
+  enabled: true
+  # A clap is a short, loud transient. Tune to your room.
+  # NOTE: the threshold is deliberately high — a low value lets ambient
+  # noise (doors, keystrokes, coughs) false-fire and open pages on its own.
+  # Lower it only after confirming your room is quiet enough.
+  rms_threshold: 0.45       # 0-1 normalized RMS that counts as a transient
+  min_gap_ms: 150           # ignore double-counts inside one clap
+  max_gap_ms: 550           # two transients within this = a deliberate double-clap
+  cooldown_s: 5.0           # ignore claps for this long after a trigger
+
+stt:
+  # faster-whisper model size: tiny | base | small | medium
+  # small ~ 600MB RAM, ~2s for 5s of speech on CPU. base is faster/rougher.
+  model_size: "small"
+  language: "en"
+  compute_type: "int8"      # int8 = fast on CPU; float16 needs GPU
+
+tts:
+  # "pyttsx3" = Windows SAPI5, fully local, zero download (default).
+  # "piper"   = higher quality; requires a Piper voice model + binary.
+  engine: "pyttsx3"
+  rate: 185                 # pyttsx3 words-per-minute
+  piper_voice_path: ""      # only used when engine: piper

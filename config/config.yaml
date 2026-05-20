@@ -1,5 +1,7 @@
 delivery:
-  email_to: egedemirkapi@gmail.com
+  email_to:
+    - egedemirkapi@gmail.com
+    - artunbatu@gmail.com
   digest_window_hours: 2
   schedule_cron: "0 */2 * * *"
 

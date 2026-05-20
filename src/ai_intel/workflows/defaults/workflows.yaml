@@ -1,0 +1,92 @@
+# Bundled default workflows.
+#
+# Override / extend per-user by editing ~/.jarvis/workflows.yaml — a
+# user workflow with the same name wins. Each step is a single-key
+# map {action.name: {args}}. Steps run in order.
+#
+# Available actions (capability-gated via ~/.jarvis/tools.toml):
+#   tabs.open_set    — open a set of URLs in the browser
+#   apps.launch      — launch a desktop app (DENY by default; opt-in)
+#   agent.run        — run a backend fleet agent
+#   classroom.check  — fetch Google Classroom coursework
+#   notify           — desktop toast
+#
+# Template interpolation: {{ steps.N.field }} pulls field from the
+# result of step N (0-based, earlier step).
+#
+# Optional `trigger` block (all keys optional):
+#   button: true            — show a run button on the dashboard
+#   clap: true              — fire on a two-clap gesture
+#   hotkey: "ctrl+alt+s"    — global hotkey
+#   voice_phrases: [...]    — spoken phrases that fire it
+
+workflows:
+
+  clap_default:
+    description: Two-clap study setup — opens usual tabs + announces ready
+    trigger:
+      button: true
+      clap: true
+      voice_phrases: ["study setup", "start studying"]
+    steps:
+      - tabs.open_set:
+          urls:
+            - https://classroom.google.com
+            - https://calendar.google.com
+            - https://www.notion.so
+            - https://github.com
+      - notify:
+          title: Jarvis
+          body: Study setup ready — tabs open.
+
+  homework_check:
+    description: Fetch + summarize Google Classroom coursework due soon
+    trigger:
+      button: true
+      voice_phrases: ["check homework", "what's my homework"]
+    steps:
+      - classroom.check:
+          days_ahead: 7
+      - notify:
+          title: Homework
+          body: "{{ steps.0.summary }}"
+
+  calendar_brief:
+    description: Summarize what's coming up on your Google Calendar
+    trigger:
+      button: true
+      voice_phrases: ["what's on my calendar", "my schedule", "calendar brief"]
+    steps:
+      - calendar.check:
+          days_ahead: 7
+      - notify:
+          title: Calendar
+          body: "{{ steps.0.summary }}"
+
+  email_check:
+    description: Check the Gmail inbox for recent messages
+    trigger:
+      button: true
+      voice_phrases: ["any new emails", "check my email", "check email"]
+    steps:
+      - email.check:
+          max_messages: 15
+      - notify:
+          title: Inbox
+          body: "{{ steps.0.summary }}"
+
+  morning_brief:
+    description: Refresh trends + propose 3 fresh ideas, then notify
+    trigger:
+      button: true
+      voice_phrases: ["morning brief", "run the morning brief"]
+    steps:
+      - agent.run:
+          agent_id: synthesizer
+      - agent.run:
+          agent_id: weekly_ideation
+          args:
+            n_candidates: 3
+      - notify:
+          title: Morning Brief
+          body: "Synthesis done. Ideation: {{ steps.1.summary }}"

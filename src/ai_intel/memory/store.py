@@ -52,13 +52,37 @@ def embed_pending(
                 tier) to a sub-corpus like ``founder_brain``.
 
     Returns count of new Embedding rows.
+
+    If any batches fail (provider rate-limit, network blip, etc.), the
+    failed-item count is logged as a WARNING. Use ``embed_pending_detailed``
+    if the caller needs structured (success, failure_count) numbers.
+    """
+    inserted, failed = embed_pending_detailed(
+        engine, embedder=embedder, batch_size=batch_size, source=source,
+    )
+    return inserted
+
+
+def embed_pending_detailed(
+    engine,
+    embedder: Embedder | None = None,
+    batch_size: int = 32,
+    *,
+    source: str | None = None,
+) -> tuple[int, int]:
+    """Like ``embed_pending`` but returns ``(inserted, failed_item_count)``.
+
+    Surfacing the failure count lets the CLI (``scripts/embed_now``) warn
+    the user when the corpus is partially indexed — silently swallowing
+    failures was the prior behavior and led to invisible bifurcation
+    between embedded vs not-yet-embedded items.
     """
     embedder = embedder or get_embedder()
-    total = 0
+    inserted = 0
+    failed = 0
     now = datetime.now(timezone.utc)
 
     with Session(engine) as session:
-        # Subquery: ids already embedded with this model
         existing_ids = set(session.exec(
             select(Embedding.item_id).where(
                 Embedding.model == embedder.model,
@@ -73,7 +97,7 @@ def embed_pending(
         unembedded = [it for it in unembedded if it.id not in existing_ids]
 
     if not unembedded:
-        return 0
+        return 0, 0
 
     for i in range(0, len(unembedded), batch_size):
         batch = unembedded[i : i + batch_size]
@@ -81,7 +105,10 @@ def embed_pending(
         try:
             vecs = embedder.embed(texts)
         except Exception as exc:
-            logger.error("Embed batch failed: %s", exc)
+            logger.error(
+                "Embed batch failed (%d items skipped): %s", len(batch), exc,
+            )
+            failed += len(batch)
             continue
 
         with Session(engine) as session:
@@ -95,11 +122,18 @@ def embed_pending(
                     created_at=now,
                 )
                 session.add(row)
-                total += 1
+                inserted += 1
             session.commit()
 
-    logger.info("Embedded %d items with %s", total, embedder.model)
-    return total
+    if failed:
+        logger.warning(
+            "Embedded %d items with %s; %d items FAILED — corpus is partial. "
+            "Re-run to retry.",
+            inserted, embedder.model, failed,
+        )
+    else:
+        logger.info("Embedded %d items with %s", inserted, embedder.model)
+    return inserted, failed
 
 
 def add_note(

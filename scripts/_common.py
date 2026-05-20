@@ -65,11 +65,23 @@ def build_item(
     author: str,
     published_at: datetime | None = None,
     kind: str = "essay",
+    source: str = "founder_brain",
+    classification: str = "essay",
+    extra_entities: dict | None = None,
 ) -> Item:
-    """Construct a founder-brain Item ready for session.add()."""
+    """Construct an ingester-side Item ready for session.add().
+
+    Defaults to the founder-brain shape (source='founder_brain',
+    classification='essay'). Pass ``source='failure_corpus'`` (and
+    typically ``kind='post_mortem'``, ``classification='post_mortem'``)
+    when building rows for the failure corpus.
+    """
     now = datetime.now(timezone.utc)
+    entities: dict = {"author": author, "kind": kind}
+    if extra_entities:
+        entities.update(extra_entities)
     return Item(
-        source="founder_brain",
+        source=source,
         url=url,
         url_hash=url_hash(url),
         title=title,
@@ -77,8 +89,8 @@ def build_item(
         author=author,
         published_at=published_at or now,
         collected_at=now,
-        classification="essay",
-        entities_json=json.dumps({"author": author, "kind": kind}),
+        classification=classification,
+        entities_json=json.dumps(entities),
     )
 
 

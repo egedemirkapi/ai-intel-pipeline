@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 
@@ -40,6 +41,12 @@ from ai_intel.db.models import IdeaCandidate
 from ai_intel.personas import KNOWN_PERSONAS, load_persona
 
 logger = logging.getLogger(__name__)
+
+# Delay between sequential persona-critic calls (seconds). Default 5.0 is
+# sized for Anthropic Tier-1 API account constraints; Max-plan OAuth users
+# can safely drop this to 1.0 or 0.5 to cut cycle time ~5x. Override via
+# the EVALUATOR_PERSONA_DELAY_SECONDS env var.
+PERSONA_DELAY_SECONDS = float(os.getenv("EVALUATOR_PERSONA_DELAY_SECONDS", "5.0"))
 
 
 CRITIC_PROMPT = """You are evaluating a startup-idea candidate using the
@@ -85,6 +92,7 @@ def _aggregate(
     persona_critiques: dict[str, dict],
     *,
     veto_below: int = 55,
+    borderline_above: int = 60,
     escalate_at: int = 75,
     needs_work_at: int = 40,
 ) -> tuple[int, str, int, str | None]:
@@ -93,11 +101,17 @@ def _aggregate(
     Returns (overall_score, verdict, min_subscore, vetoer_persona_id).
 
     Rules:
-      1. If ANY persona subscore < ``veto_below`` → verdict='killed'
-         regardless of the mean. Dissent has veto power because at least
-         one critic spotted a fatal flaw.
-      2. Otherwise verdict by mean: ≥escalate_at → 'escalated',
+      1. If ANY persona subscore < ``veto_below``:
+         a. mean ≥ ``borderline_above`` → verdict='borderline' (user-visible:
+            critics couldn't all agree but the mean signals a real idea —
+            usually a "good business that isn't venture-scale" pattern).
+         b. otherwise → verdict='killed'.
+      2. No veto: verdict by mean — ≥escalate_at → 'escalated',
          ≥needs_work_at → 'needs_work', else 'killed'.
+
+    Borderline carves a strict subset out of the kill path; it does NOT
+    weaken the veto semantics. The vetoer_persona_id is still set so the
+    user sees who pushed back.
     """
     if not persona_critiques:
         return 0, "killed", 0, None
@@ -112,6 +126,8 @@ def _aggregate(
     score = int(round(mean))
 
     if min_sub < veto_below:
+        if score >= borderline_above:
+            return score, "borderline", min_sub, min_pid
         return score, "killed", min_sub, min_pid
 
     if score >= escalate_at:
@@ -129,11 +145,14 @@ def _load_candidate(engine, candidate_id: int) -> IdeaCandidate | None:
 
 
 def _pending_candidate_ids(engine, limit: int) -> list[int]:
+    """Return up to ``limit`` candidate ids with status='proposed', newest
+    first. Newest-first matches the "evaluate what was just proposed"
+    intent — otherwise stale stuck rows poison the queue."""
     with Session(engine) as s:
         rows = list(s.exec(
             select(IdeaCandidate.id)
             .where(IdeaCandidate.status == "proposed")
-            .order_by(IdeaCandidate.proposed_at)
+            .order_by(IdeaCandidate.proposed_at.desc())
             .limit(limit)
         ))
     return list(rows)
@@ -153,6 +172,7 @@ async def evaluator(
     engine,
     *,
     candidate_id: int | None = None,
+    candidate_ids: list[int] | None = None,
     batch_limit: int = 5,
     model: str = "claude-haiku-4-5",
     escalate_threshold: int = 75,
@@ -160,14 +180,19 @@ async def evaluator(
 ):
     """Score one or many IdeaCandidate rows.
 
-    If candidate_id is given, evaluate just that one. Otherwise pull up
-    to ``batch_limit`` candidates with status="proposed" and evaluate
-    each.
+    Selection priority:
+      1. ``candidate_id=X`` — evaluate exactly that one
+      2. ``candidate_ids=[...]`` — evaluate exactly that list (used by the
+         orchestrator so freshly-proposed rows can't be shadowed by stale
+         pending rows lying around in the DB)
+      3. Otherwise pull up to ``batch_limit`` newest pending rows
 
     Returns AgentResult dict — summary lists IDs evaluated + their verdicts.
     """
     if candidate_id is not None:
         ids = [candidate_id]
+    elif candidate_ids:
+        ids = list(candidate_ids)
     else:
         ids = _pending_candidate_ids(engine, batch_limit)
 
@@ -195,11 +220,19 @@ async def evaluator(
         first_call = True
         for pid in KNOWN_PERSONAS:
             if not first_call:
-                time.sleep(5.0)
+                time.sleep(PERSONA_DELAY_SECONDS)
             first_call = False
             try:
                 persona_text = load_persona(pid)
             except FileNotFoundError:
+                # Persona file deleted/renamed — log loudly so the operator
+                # notices, then skip. Silently degrading from 6 critics to 5
+                # is the kind of bug that takes weeks to spot.
+                logger.warning(
+                    "evaluator: persona file for %r not found — skipping. "
+                    "Expected src/ai_intel/personas/%s.md",
+                    pid, pid,
+                )
                 continue
             prompt = CRITIC_PROMPT.format(
                 persona_name=pid.replace("_", " ").title(),

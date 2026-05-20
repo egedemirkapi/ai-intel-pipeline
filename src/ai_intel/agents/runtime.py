@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import Iterable, Literal
@@ -44,8 +45,14 @@ PRICING: dict[str, tuple[float, float]] = {
 
 DEFAULT_MODEL = "claude-haiku-4-5"
 
-# Cached bridge health: (last_probe_ts, was_up)
+# Cached bridge health: (last_probe_ts, was_up). Guarded by ``_HEALTH_LOCK``
+# because multiple agents (proposer, evaluator, synthesizer, ideation) run
+# concurrently under asyncio + the @agent decorator and would otherwise
+# race on the check-then-set pattern, producing spurious bridge-down
+# warnings (or worse — using a stale-True cache to call an unreachable
+# bridge).
 _BRIDGE_HEALTH: tuple[float, bool] = (0.0, False)
+_HEALTH_LOCK = threading.Lock()
 _HEALTH_TTL_S = 60.0
 
 
@@ -78,22 +85,30 @@ def _bridge_url(override: str | None) -> str:
 
 def _is_bridge_reachable(bridge_url: str, *, force_probe: bool = False) -> bool:
     """Cheap health probe with TTL cache. Returns True if /healthz responds
-    200 within 2s. Cached for 60s.
+    200 within 2s. Cached for ``_HEALTH_TTL_S`` (60s).
+
+    Thread-safe: the cache read + write are serialized via ``_HEALTH_LOCK``
+    so concurrent agents don't race on the check-then-set pattern. We
+    release the lock before the HTTP probe (so a slow probe doesn't
+    block other readers), then re-acquire to publish the result — at
+    worst two callers probe at once, but neither sees torn state.
     """
     global _BRIDGE_HEALTH
     if not bridge_url:
         return False
     now = time.time()
-    last_ts, last_up = _BRIDGE_HEALTH
-    if not force_probe and now - last_ts < _HEALTH_TTL_S:
-        return last_up
+    with _HEALTH_LOCK:
+        last_ts, last_up = _BRIDGE_HEALTH
+        if not force_probe and now - last_ts < _HEALTH_TTL_S:
+            return last_up
     health_url = bridge_url.rstrip("/").rsplit("/", 1)[0] + "/healthz"
     try:
         r = httpx.get(health_url, timeout=2.0)
         up = r.status_code == 200
     except Exception:
         up = False
-    _BRIDGE_HEALTH = (now, up)
+    with _HEALTH_LOCK:
+        _BRIDGE_HEALTH = (now, up)
     return up
 
 
@@ -103,16 +118,32 @@ def _call_oauth_bridge(
     *,
     timeout: float = 90.0,
 ) -> LLMResponse:
-    """Send a chat-completion-style payload to the laptop bridge."""
+    """Send a chat-completion-style payload to the laptop bridge.
+
+    Validates the response shape. If the bridge returns malformed JSON,
+    an explicit error payload, or a missing/empty ``text`` field, raises
+    ``RuntimeError`` so ``call_llm()`` can fall back to the API-key path
+    rather than silently treating it as a free zero-token success.
+    """
     r = httpx.post(
         bridge_url,
         json={"messages": messages},
         timeout=timeout,
     )
     r.raise_for_status()
-    data = r.json()
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise RuntimeError(f"bridge returned non-JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"bridge response not a dict: {type(data).__name__}")
+    if "error" in data:
+        raise RuntimeError(f"bridge returned error: {data['error']!r}")
+    text = data.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("bridge response missing or empty 'text' field")
     return LLMResponse(
-        text=data.get("text", ""),
+        text=text,
         prompt_tokens=int(data.get("prompt_tokens", 0)),
         completion_tokens=int(data.get("completion_tokens", 0)),
         auth_mode="oauth",

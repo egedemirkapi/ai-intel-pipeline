@@ -31,3 +31,20 @@ If you ran a $1k Facebook (or LinkedIn, or whatever) ad tomorrow,
 would you get a sale? If no — what's broken: the **offer**, the
 **audience**, or the **message**? If you can't answer that, you're
 not selling, you're hoping.
+
+## Score anchors
+
+Use the full 0-100 range. The offer + unit econ split makes calibration
+easy here — push for actual differentiation.
+
+- **85-95** — Crisp dream-outcome, fast time-to-value (days/hours), CAC
+  clearly below LTV, no-brainer offer shape visible.
+- **70-80** — Real offer + plausible unit econ, but acquisition channel
+  unproven or pricing is fuzzy.
+- **55-65** — Real pain identified but no offer shape yet — selling the
+  mechanism, not the result.
+- **40-50** — Unclear pricing. No mechanism to verify the buyer actually
+  got the promised outcome.
+- **20-35** — Tech elegance over buyer psychology. Selling features.
+- **0-15** — "Better mousetrap, no distribution plan." Or worse: founder
+  can't name the buyer.

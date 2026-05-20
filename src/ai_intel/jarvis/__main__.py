@@ -253,6 +253,12 @@ def _cmd_agents_run(args: argparse.Namespace) -> int:
         kw["batch_limit"] = args.batch_limit
     if getattr(args, "n_candidates", None) is not None:
         kw["n_candidates"] = args.n_candidates
+    if getattr(args, "days", None) is not None:
+        kw["days"] = args.days
+    if getattr(args, "max_items", None) is not None:
+        kw["max_items"] = args.max_items
+    if getattr(args, "no_synthesis", False):
+        kw["use_synthesis"] = False
     if args.model:
         kw["model"] = args.model
 
@@ -307,6 +313,13 @@ def _cmd_ideas_list(args: argparse.Namespace) -> int:
             except _json.JSONDecodeError:
                 continue
             detail = blob.pop("_proposer_detail", {})
+            # Entrepreneurial reasoning chain — the WHY behind the proposal
+            if detail.get("pattern_recognized"):
+                print(f"     pattern:   {detail['pattern_recognized']}")
+            if detail.get("gap_identified"):
+                print(f"     gap:       {detail['gap_identified']}")
+            if detail.get("failure_pattern_avoided"):
+                print(f"     avoids:    {detail['failure_pattern_avoided']}")
             if detail.get("wedge"):
                 print(f"     wedge:     {detail['wedge']}")
             if detail.get("validation_step"):
@@ -385,12 +398,17 @@ def build_parser() -> argparse.ArgumentParser:
     atail.set_defaults(func=_cmd_agents_tail)
 
     arun = agents_sub.add_parser("run", help="Trigger one agent manually")
-    arun.add_argument("agent_id", help="saturator | proposer | evaluator | weekly_ideation")
+    arun.add_argument("agent_id", help="saturator | synthesizer | proposer | evaluator | weekly_ideation")
     arun.add_argument("--topic", help="(saturator) topic to assess")
     arun.add_argument("--persona", help="(proposer) persona_id to use, e.g. paul_graham")
     arun.add_argument("--candidate-id", type=int, help="(evaluator) specific IdeaCandidate id")
     arun.add_argument("--batch-limit", type=int, help="(evaluator) max candidates per run")
     arun.add_argument("--n-candidates", type=int, help="(weekly_ideation) ideas to attempt")
+    arun.add_argument("--days", type=int, help="(synthesizer) days back to analyze")
+    arun.add_argument("--max-items", type=int, help="(synthesizer) cap items fed to LLM")
+    arun.add_argument("--no-synthesis", action="store_true",
+                      help="(weekly_ideation) opt out of trend-mode and force "
+                           "single-item-per-candidate proposer behavior")
     arun.add_argument("--model", help="Override the LLM model id (e.g. claude-sonnet-4-6)")
     arun.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
     arun.set_defaults(func=_cmd_agents_run)
@@ -406,10 +424,121 @@ def build_parser() -> argparse.ArgumentParser:
     ilist.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
     ilist.set_defaults(func=_cmd_ideas_list)
 
+    brain = sub.add_parser("brain", help="Run the Jarvis Brain service (FastAPI)")
+    brain_sub = brain.add_subparsers(dest="brain_cmd", required=True)
+    bserve = brain_sub.add_parser("serve", help="Start the Brain HTTP service")
+    bserve.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    bserve.add_argument("--port", type=int, default=9999, help="Bind port (default: 9999)")
+    bserve.add_argument("--reload", action="store_true", help="Auto-reload on code change (dev only)")
+    bserve.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
+    bserve.set_defaults(func=_cmd_brain_serve)
+
+    workflow = sub.add_parser("workflow", help="Run / inspect automation workflows")
+    workflow_sub = workflow.add_subparsers(dest="workflow_cmd", required=True)
+    wlist = workflow_sub.add_parser("list", help="List available workflows")
+    wlist.set_defaults(func=_cmd_workflow_list)
+    wrun = workflow_sub.add_parser("run", help="Run a workflow by name")
+    wrun.add_argument("name", help="Workflow name (e.g. clap_default, morning_brief)")
+    wrun.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
+    wrun.set_defaults(func=_cmd_workflow_run)
+
     return p
 
 
+def _cmd_workflow_list(_args: argparse.Namespace) -> int:
+    from ai_intel.workflows import list_workflows
+    rows = list_workflows()
+    if not rows:
+        print("(no workflows defined)")
+        return 0
+    for w in rows:
+        print(f"  {w['name']:<20} {w['step_count']} steps — {w['description']}")
+    return 0
+
+
+def _cmd_workflow_run(args: argparse.Namespace) -> int:
+    import asyncio
+    from ai_intel.workflows import run_workflow
+
+    db_path = Path(args.db) if args.db else DEFAULT_DB_PATH
+    engine = _open_engine(db_path)
+    result = asyncio.run(run_workflow(engine, args.name))
+    if "error" in result:
+        print(f"error: {result['error']}", file=sys.stderr)
+        if result.get("available"):
+            print(f"available: {', '.join(result['available'])}", file=sys.stderr)
+        return 1
+    status = "ok" if result.get("ok") else "partial (some steps failed/refused)"
+    print(f"workflow {args.name!r} — {status}")
+    for i, step in enumerate(result.get("steps", [])):
+        action = step.get("action", "?")
+        if "error" in step:
+            print(f"  [{i}] {action}: ERROR {step['error']}")
+        elif "refused" in step:
+            print(f"  [{i}] {action}: REFUSED ({step.get('approval_id')})")
+        else:
+            print(f"  [{i}] {action}: {step.get('summary', 'done')}")
+    return 0
+
+
+def _cmd_brain_serve(args: argparse.Namespace) -> int:
+    """Start the Brain FastAPI service via uvicorn."""
+    import uvicorn
+
+    # Refuse to start a second Brain — overlapping copies were a source of
+    # the "which window is which" confusion. (uvicorn would also fail to
+    # bind the port, but this gives a clean message instead of a traceback.)
+    from ai_intel.single_instance import acquire_single_instance
+
+    if not acquire_single_instance(f"jarvis-brain-{args.port}"):
+        print(
+            f"A Jarvis Brain is already running on port {args.port} — "
+            "not starting a second copy.",
+            file=sys.stderr,
+        )
+        return 0
+
+    # Tell the app which db to use via env var so create_app picks it up
+    if args.db:
+        import os as _os
+        _os.environ["JARVIS_DB_PATH"] = str(Path(args.db))
+    elif "JARVIS_DB_PATH" not in __import__("os").environ:
+        import os as _os
+        _os.environ["JARVIS_DB_PATH"] = str(DEFAULT_DB_PATH)
+    print(f"Jarvis Brain serving on http://{args.host}:{args.port}")
+    print(f"  DB:      {__import__('os').environ['JARVIS_DB_PATH']}")
+    print(f"  Reload:  {args.reload}")
+    print("  Endpoints: /, /agents/status, /ideas, /trends, /intel, /chat, /events (WS)")
+    uvicorn.run(
+        "ai_intel.brain.app:create_app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        factory=True,
+        log_level="info",
+    )
+    return 0
+
+
+def _force_utf8_stdio() -> None:
+    """Reconfigure stdout/stderr to UTF-8 on Windows.
+
+    Default Windows console code page is cp1252; printing the unicode
+    arrows/borders/em-dashes the agents emit (e.g. evaluator summary
+    "#11: mean=56 min=48 → killed") crashes with UnicodeEncodeError.
+    `reconfigure()` was added to TextIOWrapper in 3.7 and is the
+    documented fix.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            # Non-TextIOWrapper (e.g. captured by pytest) — leave it alone.
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
 

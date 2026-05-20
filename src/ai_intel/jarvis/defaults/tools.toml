@@ -32,3 +32,28 @@
 "file.read"                = "allow"
 "file.write"               = "deny"
 "shell.exec"               = "deny"
+
+# ── Jarvis Brain — read-only tools the chat LLM can call ─────────────
+"agents.status"            = "allow"
+"agents.tail"              = "allow"
+"agents.run"               = "allow"   # explicit user request → fire backend agent
+"ideas.list"               = "allow"
+"ideas.show"               = "allow"
+"trends.latest"            = "allow"
+"intel.recent"             = "allow"
+
+# ── Workflow engine (Phase 14) ───────────────────────────────────────
+"workflow.run"             = "allow"   # YAML workflows are user-defined
+"workflow.list"            = "allow"   # read-only: list workflow names
+"workflow.edit"            = "allow"   # dashboard routine editor: create/update/delete
+"tabs.open_set"            = "allow"   # opens predefined Chrome tabs
+"apps.launch"              = "allow"   # gated per-app by ~/.jarvis/apps_allowed.json,
+                                       #   not here — see workflows/actions/apps.py
+"agent.run"                = "allow"   # workflow step → backend agent
+"classroom.check"          = "allow"   # workflow step → Classroom read
+"calendar.check"           = "allow"   # workflow step → Calendar read
+"email.check"              = "allow"   # workflow step → Gmail read (metadata only)
+"notify"                   = "allow"   # local desktop toast
+
+# ── Google Workspace — Classroom read added ──────────────────────────
+"gworkspace.read_classroom" = "allow"

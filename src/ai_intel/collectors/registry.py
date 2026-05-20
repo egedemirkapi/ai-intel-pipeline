@@ -3,6 +3,9 @@ from pathlib import Path
 from typing import Any
 
 from ai_intel.collectors.base import Collector
+from ai_intel.collectors.google_calendar import GoogleCalendarCollector
+from ai_intel.collectors.google_classroom import GoogleClassroomCollector
+from ai_intel.collectors.google_gmail import GoogleGmailCollector
 from ai_intel.collectors.google_news import GoogleNewsCollector
 from ai_intel.collectors.hn import HackerNewsCollector
 from ai_intel.collectors.pain_sources import PainSourcesCollector
@@ -72,6 +75,12 @@ def build_collectors_from_config(cfg: dict[str, Any]) -> list[Collector]:
                 collectors.append(GoogleNewsCollector(queries=GOOGLE_NEWS_QUERIES))
             elif src_id == "pain_sources":
                 collectors.append(PainSourcesCollector())
+            elif src_id == "gclassroom":
+                collectors.append(GoogleClassroomCollector())
+            elif src_id == "gcalendar":
+                collectors.append(GoogleCalendarCollector())
+            elif src_id == "gmail":
+                collectors.append(GoogleGmailCollector())
             elif src_id in RSS_FEEDS:
                 source_id, feed_url, filter_ai = RSS_FEEDS[src_id]
                 collectors.append(RSSCollector(source_id=source_id, feed_url=feed_url, filter_ai=filter_ai))

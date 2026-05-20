@@ -1,0 +1,190 @@
+"""Tests for workflow CRUD (persist.py) and trigger resolution (triggers.py).
+
+Covers:
+- validate_def: well-formed vs. malformed definitions and triggers
+- create / update / delete against a temp user file
+- builtin protection (cannot delete a bundled default)
+- workflows_with_trigger / hotkey_map / match_voice
+"""
+from __future__ import annotations
+
+import pytest
+import yaml
+
+from ai_intel.workflows import (
+    WorkflowError,
+    create_workflow,
+    delete_workflow,
+    get_workflow,
+    hotkey_map,
+    list_workflow_defs,
+    match_voice,
+    update_workflow,
+    validate_def,
+    workflows_with_trigger,
+)
+
+
+def _valid_def(**overrides):
+    d = {
+        "description": "test routine",
+        "trigger": {"button": True, "voice_phrases": ["do the thing"]},
+        "steps": [{"notify": {"title": "T", "body": "hello"}}],
+    }
+    d.update(overrides)
+    return d
+
+
+# ─── validate_def ───────────────────────────────────────────────────
+
+
+def test_validate_accepts_well_formed_def():
+    assert validate_def(_valid_def()) == []
+
+
+def test_validate_rejects_non_mapping():
+    assert validate_def("not a dict")
+
+
+def test_validate_requires_non_empty_steps():
+    errors = validate_def(_valid_def(steps=[]))
+    assert any("steps" in e for e in errors)
+
+
+def test_validate_rejects_unknown_action():
+    errors = validate_def(_valid_def(steps=[{"bogus.action": {}}]))
+    assert any("unknown action" in e for e in errors)
+
+
+def test_validate_rejects_multi_key_step():
+    errors = validate_def(_valid_def(steps=[{"notify": {}, "tabs.open_set": {}}]))
+    assert any("single" in e for e in errors)
+
+
+def test_validate_rejects_bad_trigger_key():
+    errors = validate_def(_valid_def(trigger={"bogus": True}))
+    assert any("unknown key" in e for e in errors)
+
+
+def test_validate_rejects_bad_hotkey_type():
+    errors = validate_def(_valid_def(trigger={"hotkey": 123}))
+    assert any("hotkey" in e for e in errors)
+
+
+def test_validate_rejects_bad_voice_phrases():
+    errors = validate_def(_valid_def(trigger={"voice_phrases": "not a list"}))
+    assert any("voice_phrases" in e for e in errors)
+
+
+# ─── create / update / delete ───────────────────────────────────────
+
+
+def test_create_writes_to_user_file(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    create_workflow("my_routine", _valid_def(), path=p)
+    assert p.exists()
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert "my_routine" in data["workflows"]
+    assert get_workflow("my_routine", path=p)["description"] == "test routine"
+
+
+def test_create_rejects_duplicate_name(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    create_workflow("dup", _valid_def(), path=p)
+    with pytest.raises(WorkflowError, match="already exists"):
+        create_workflow("dup", _valid_def(), path=p)
+
+
+def test_create_rejects_invalid_name(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    with pytest.raises(WorkflowError, match="invalid name"):
+        create_workflow("bad name!", _valid_def(), path=p)
+
+
+def test_create_rejects_invalid_def(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    with pytest.raises(WorkflowError):
+        create_workflow("bad", {"steps": []}, path=p)
+
+
+def test_update_overwrites(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    create_workflow("r", _valid_def(), path=p)
+    update_workflow("r", _valid_def(description="changed"), path=p)
+    assert get_workflow("r", path=p)["description"] == "changed"
+
+
+def test_update_can_override_builtin(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    update_workflow("clap_default", _valid_def(description="my clap"), path=p)
+    assert get_workflow("clap_default", path=p)["description"] == "my clap"
+
+
+def test_delete_removes_user_workflow(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    create_workflow("temp", _valid_def(), path=p)
+    delete_workflow("temp", path=p)
+    assert get_workflow("temp", path=p) is None
+
+
+def test_delete_builtin_is_refused(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    with pytest.raises(WorkflowError, match="built-in"):
+        delete_workflow("clap_default", path=p)
+
+
+def test_delete_unknown_is_refused(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    with pytest.raises(WorkflowError, match="unknown"):
+        delete_workflow("nope", path=p)
+
+
+def test_list_workflow_defs_marks_builtins(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    create_workflow("custom", _valid_def(), path=p)
+    rows = {r["name"]: r for r in list_workflow_defs(path=p)}
+    assert rows["clap_default"]["is_builtin"] is True
+    assert rows["custom"]["is_builtin"] is False
+    assert "trigger" in rows["custom"] and "step_count" in rows["custom"]
+
+
+# ─── triggers ───────────────────────────────────────────────────────
+
+
+def test_workflows_with_trigger_finds_clap_default(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    assert "clap_default" in workflows_with_trigger("clap", path=p)
+    assert "clap_default" in workflows_with_trigger("button", path=p)
+
+
+def test_hotkey_map_collects_hotkeys(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    create_workflow(
+        "hk",
+        _valid_def(trigger={"hotkey": "ctrl+alt+j"}),
+        path=p,
+    )
+    assert hotkey_map(path=p).get("hk") == "ctrl+alt+j"
+
+
+def test_match_voice_picks_workflow_by_phrase(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    # clap_default has voice phrase "study setup"
+    assert match_voice("hey jarvis, study setup please", path=p) == "clap_default"
+
+
+def test_match_voice_returns_none_on_no_match(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    assert match_voice("completely unrelated sentence", path=p) is None
+
+
+def test_match_voice_prefers_longest_phrase(tmp_path):
+    p = tmp_path / "workflows.yaml"
+    create_workflow(
+        "specific",
+        _valid_def(trigger={"voice_phrases": ["open my study setup dashboard"]}),
+        path=p,
+    )
+    # transcript contains both "study setup" (clap_default) and the longer phrase
+    got = match_voice("please open my study setup dashboard now", path=p)
+    assert got == "specific"

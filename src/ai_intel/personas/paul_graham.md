@@ -28,3 +28,21 @@ who desperately need something beats a large set who'd mildly enjoy it.
 ## Quick test
 If you wrote this idea down and showed it to your target users **today**,
 would they ask to pay for the unbuilt version?
+
+## Score anchors
+
+Use the full 0-100 range. Defaulting to "around 50" means you haven't
+actually distinguished the idea — push yourself: is it 42 (real concerns)
+or 58 (real shot)?
+
+- **85-95** — Clear schlep + ≥10 named users who'd feel real loss if it
+  vanished + a founder who lived the problem. Rare. Only true conviction.
+- **70-80** — Real schlep + plausible users + 10× version of what they do
+  today. Execution risk but the bet itself is sound.
+- **55-65** — Genuine pain but it's a vitamin, not aspirin — OR a vitamin
+  in a wedge that may be too small. Worth more thought, not yet a yes.
+- **40-50** — Sounds like a feature, not a product. Founder doesn't
+  obviously live the problem. No schlep visible.
+- **20-35** — "Everybody needs this." Sounds clever in meetings. Multiple
+  "and"s in the pitch.
+- **0-15** — Architecturally hopeless: AI + blockchain + marketplace.

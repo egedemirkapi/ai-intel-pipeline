@@ -9,6 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from ai_intel.collectors.registry import build_collectors_from_config
 from ai_intel.collectors.runner import run_all_collectors
 from ai_intel.enrichment.runner import enrich_new_items
+from ai_intel.maintenance import run_daily_maintenance
 from ai_intel.pipeline import generate_and_send_digest
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,12 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
         )
         logger.info(f"Digest sent: {result}")
 
+    async def maintenance_job():
+        # Daily prune of audit-table churn so AgentRun + SaturationAssessment
+        # don't grow unbounded over 24/7 operation.
+        summary = run_daily_maintenance(engine)
+        logger.info("Maintenance prune: %s", summary)
+
     sched.add_job(collect_job, "interval", minutes=5, id="collect", misfire_grace_time=60)
     sched.add_job(
         enrich_job, "interval", minutes=5, id="enrich",
@@ -53,4 +60,8 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
         next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2),
     )
     sched.add_job(digest_job, "cron", hour="*/2", minute=0, id="digest", misfire_grace_time=300)
+    sched.add_job(
+        maintenance_job, "cron", hour=4, minute=0,
+        id="maintenance", misfire_grace_time=3600,
+    )
     return sched

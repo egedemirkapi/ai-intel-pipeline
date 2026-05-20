@@ -28,6 +28,15 @@ from sqlmodel import Session
 
 from ai_intel.db.models import AgentRun
 
+# Event-bus publication is best-effort: if the brain package isn't loaded
+# (e.g. tests that don't depend on it, or a pure-pipeline invocation), the
+# import-time hook is still cheap and the publish call is a no-op.
+try:
+    from ai_intel.brain.events import FleetEvent, get_event_bus
+    _BUS_AVAILABLE = True
+except Exception:  # pragma: no cover — only fires if brain pkg broken
+    _BUS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,19 +53,41 @@ AgentFunc = Callable[..., Awaitable[AgentResult | None]]
 
 
 def agent(agent_id: str) -> Callable[[AgentFunc], AgentFunc]:
-    """Decorate an async agent function with AgentRun bookkeeping."""
+    """Decorate an async agent function with AgentRun bookkeeping.
+
+    Side effect: publishes ``agent_started`` and ``agent_finished``
+    events to the Jarvis Brain event bus so the frontend can re-render
+    live without polling. Publishing is best-effort (swallows errors)
+    so an event-bus issue never breaks an agent run.
+    """
 
     def decorator(fn: AgentFunc) -> AgentFunc:
         @functools.wraps(fn)
         async def wrapper(engine, *args, **kwargs):
             run_id = _record_start(engine, agent_id)
+            _publish_event("agent_started", agent_id=agent_id, run_id=run_id)
             try:
                 result = await fn(engine, *args, **kwargs)
             except Exception as exc:
                 err = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
                 _record_finish(engine, run_id, status="failed", error=err)
+                _publish_event(
+                    "agent_finished", agent_id=agent_id, run_id=run_id,
+                    summary=f"failed: {type(exc).__name__}: {exc}",
+                    payload={"status": "failed"},
+                )
                 raise
             _record_finish(engine, run_id, status="completed", result=result or {})
+            _publish_event(
+                "agent_finished", agent_id=agent_id, run_id=run_id,
+                summary=(result or {}).get("summary"),
+                payload={
+                    "status": "completed",
+                    "cost_usd": (result or {}).get("cost_usd", 0.0),
+                    "prompt_tokens": (result or {}).get("prompt_tokens", 0),
+                    "completion_tokens": (result or {}).get("completion_tokens", 0),
+                },
+            )
             return result
 
         # Expose the underlying function so tests can call it directly
@@ -65,6 +96,31 @@ def agent(agent_id: str) -> Callable[[AgentFunc], AgentFunc]:
         return wrapper
 
     return decorator
+
+
+def _publish_event(
+    event_type: str,
+    *,
+    agent_id: str,
+    run_id: int,
+    summary: str | None = None,
+    payload: dict | None = None,
+) -> None:
+    """Best-effort publish to the Jarvis Brain event bus."""
+    if not _BUS_AVAILABLE:
+        return
+    try:
+        bus = get_event_bus()
+        evt = FleetEvent(
+            type=event_type,  # type: ignore[arg-type]
+            agent_id=agent_id,
+            run_id=run_id,
+            summary=summary,
+            payload=payload,
+        )
+        bus.publish(evt)
+    except Exception as exc:  # pragma: no cover
+        logger.debug("event_bus publish failed (non-fatal): %s", exc)
 
 
 def _record_start(engine, agent_id: str) -> int:

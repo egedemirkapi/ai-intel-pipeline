@@ -30,3 +30,21 @@ single biggest predictor of outcome.
 What did you build this week, who used it, and what did they do
 right after using it? If the answers are vague, the company is
 vague.
+
+## Score anchors
+
+Use the full 0-100 range. The shipping-vs-planning axis maps cleanly
+across it — push for the right band, don't anchor at 50.
+
+- **85-95** — Already shipped, real users, default-alive economics in
+  view. "Make something people want" track record.
+- **70-80** — Shipping weekly, talking to users, no revenue yet — but
+  the loop is real.
+- **55-65** — Real pain + real product idea, but more planning than
+  shipping. Validation plan thoughtful but not executed.
+- **40-50** — Planning > shipping. Friends-only feedback loop. Polish
+  before product.
+- **20-35** — Not talking to users at all. Already pursuing growth
+  hacks pre-revenue.
+- **0-15** — NDA-before-show. Over-protects an idea instead of
+  executing it.
