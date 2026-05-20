@@ -63,6 +63,9 @@ class ClapDetector:
         if now - self._last_transient_t < self.min_gap_s:
             return
         self._last_transient_t = now
+        # Visibility: every accepted transient is logged, so the tray
+        # console shows clap activity even for a single clap.
+        logger.info("clap: heard a transient (loud enough to count)")
 
         if not self._armed:
             # First clap — arm and wait for a second.
