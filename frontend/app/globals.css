@@ -72,3 +72,75 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ─── Jarvis orb — the living voice presence ──────────────────────── */
+.orb-core {
+  position: absolute;
+  inset: 20%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 38% 32%,
+    #c8fff4 0%,
+    #00f0c0 32%,
+    #02b9a6 58%,
+    #064b5e 100%
+  );
+  box-shadow:
+    0 0 70px 10px rgba(0, 240, 192, 0.55),
+    0 0 150px 40px rgba(0, 229, 255, 0.28),
+    inset 0 0 50px rgba(255, 255, 255, 0.22);
+  animation: orb-breathe 5s ease-in-out infinite;
+  will-change: transform, border-radius;
+}
+.orb-core.orb-listening { animation: orb-listen 1.8s ease-in-out infinite; }
+.orb-core.orb-thinking  { animation: orb-think 1.2s linear infinite; }
+.orb-core.orb-speaking  { animation: orb-speak 0.5s ease-in-out infinite; }
+
+.orb-ring {
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 229, 255, 0.3);
+  animation: orb-ripple 4.5s ease-out infinite;
+  will-change: transform, opacity;
+}
+.orb-ring-2 {
+  inset: 0;
+  animation-delay: 2.25s;
+}
+.orb-ring.orb-listening,
+.orb-ring.orb-speaking {
+  animation-duration: 1.9s;
+  border-color: rgba(0, 240, 192, 0.5);
+}
+.orb-ring.orb-thinking { animation-duration: 2.6s; }
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.045); }
+}
+@keyframes orb-listen {
+  0%, 100% { transform: scale(1);    border-radius: 50%; }
+  50%      { transform: scale(1.07); border-radius: 54% 46% 52% 48%; }
+}
+@keyframes orb-think {
+  0%   { transform: scale(1.03) rotate(0deg); }
+  100% { transform: scale(1.03) rotate(360deg); }
+}
+@keyframes orb-speak {
+  0%, 100% { transform: scale(1.02); border-radius: 50%; }
+  25%      { transform: scale(1.1);  border-radius: 58% 42% 56% 44%; }
+  50%      { transform: scale(0.95); border-radius: 44% 56% 46% 54%; }
+  75%      { transform: scale(1.09); border-radius: 53% 47% 59% 41%; }
+}
+@keyframes orb-ripple {
+  0%   { transform: scale(0.72); opacity: 0.7; }
+  100% { transform: scale(1.28); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-core,
+  .orb-ring { animation: none !important; }
+  .orb-core { transform: scale(1); }
+  .orb-ring { opacity: 0.25; }
+}

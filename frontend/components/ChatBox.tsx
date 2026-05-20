@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
+import { OrbState } from "@/components/JarvisOrb";
 
 interface Turn {
   role: "user" | "jarvis";
@@ -12,13 +13,18 @@ interface Turn {
   tools?: string[];
 }
 
-export default function ChatBox() {
+export default function ChatBox({
+  onState,
+}: {
+  onState?: (s: OrbState) => void;
+}) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   // Brain conversation history (assistant + tool blocks) for context.
   const historyRef = useRef<unknown[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const send = async () => {
     const msg = input.trim();
@@ -26,6 +32,7 @@ export default function ChatBox() {
     setInput("");
     setTurns((t) => [...t, { role: "user", text: msg }]);
     setBusy(true);
+    onState?.("thinking"); // the orb shimmers while Jarvis works
     try {
       const res = await api.chat(msg, historyRef.current);
       historyRef.current = (res.history as unknown[]) ?? [];
@@ -34,8 +41,12 @@ export default function ChatBox() {
         ...t,
         { role: "jarvis", text: res.reply || "(no reply)", tools },
       ]);
+      onState?.("speaking"); // a brief wobble as the reply lands
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      idleTimer.current = setTimeout(() => onState?.("idle"), 2400);
     } catch (e) {
       setTurns((t) => [...t, { role: "jarvis", text: `Error: ${String(e)}` }]);
+      onState?.("idle");
     } finally {
       setBusy(false);
       setTimeout(() => {
@@ -45,15 +56,16 @@ export default function ChatBox() {
   };
 
   return (
-    <Card title="TALK TO JARVIS" className="min-h-0 h-full">
+    <Card title="CONVERSATION" className="min-h-0 h-full">
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto flex flex-col gap-2 mb-3"
       >
         {turns.length === 0 && (
-          <p className="text-slate-500 text-xs">
-            Ask anything — &quot;what&apos;s the fleet doing&quot;, &quot;show
-            me borderline ideas&quot;, &quot;run my morning brief&quot;.
+          <p className="text-slate-500 text-xs leading-relaxed">
+            Ask anything — &quot;what&apos;s the fleet doing&quot;, &quot;open
+            Spotify&quot;, &quot;run the process and give me 3 ideas&quot;,
+            &quot;what&apos;s my briefing&quot;.
           </p>
         )}
         {turns.map((t, i) => (
@@ -84,7 +96,7 @@ export default function ChatBox() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Message Jarvis…"
+          placeholder="Type or speak to Jarvis…"
           disabled={busy}
           className="flex-1"
         />

@@ -1,86 +1,165 @@
-"""Text-to-speech.
+"""Text-to-speech — runs on its own dedicated thread.
 
-Two engines:
-    pyttsx3 (default) — Windows SAPI5 voices. Fully local, zero
-                        download, works offline. Good enough for a
-                        personal assistant.
-    piper             — higher-quality neural voices; needs a Piper
-                        voice model file. Opt-in via config.yaml.
+CRITICAL DESIGN: the TTS engine is created AND driven on ONE dedicated
+thread. pyttsx3 is not thread-safe — its ``runAndWait()`` hangs forever
+if called from a thread other than the one that init'd it. The old
+design init'd the engine on the main thread but called ``speak()`` from
+the voice tray's worker thread, so Jarvis silently never spoke.
 
-We deliberately do NOT use a cloud TTS (e.g. Edge TTS) — that would
-send the reply text to a remote server, breaking the max-privacy
-posture. Both engines here keep everything on the machine.
+Now ``Speaker`` owns a ``jarvis-tts`` thread: that thread initializes the
+engine and is the only thread that ever touches it. ``speak()`` just
+enqueues text — it is non-blocking; utterances play serially.
+
+Engines (all local — nothing leaves the machine):
+    piper   — neural voice; needs a voice model (scripts/setup_piper.py)
+    pyttsx3 — Windows SAPI5; zero download; automatic fallback
 """
 from __future__ import annotations
 
 import logging
+import os
+import queue
+import threading
 
 logger = logging.getLogger(__name__)
 
+_STOP = object()  # queue sentinel for shutdown
+
 
 class Speaker:
-    """Speak text aloud. Engine chosen at construction."""
+    """Speak text aloud from a dedicated thread. ``speak()`` is non-blocking."""
 
     def __init__(
         self,
         *,
-        engine: str = "pyttsx3",
+        engine: str = "piper",
         rate: int = 185,
         piper_voice_path: str = "",
+        on_state=None,
     ) -> None:
-        self.engine_name = engine
+        self._want_engine = engine
         self.rate = rate
         self.piper_voice_path = piper_voice_path
+        # Optional callback(str): fired with "speaking" when an utterance
+        # starts and "idle" when the queue drains — drives the dashboard orb.
+        self._on_state = on_state
+
+        self._engine: str | None = None  # resolved engine after init/fallback
         self._pyttsx = None
         self._piper = None
-        if engine == "pyttsx3":
-            self._init_pyttsx3()
-        elif engine == "piper":
-            self._init_piper()
-        else:
-            logger.warning("unknown TTS engine %r — falling back to pyttsx3", engine)
-            self.engine_name = "pyttsx3"
-            self._init_pyttsx3()
 
-    def _init_pyttsx3(self) -> None:
-        import pyttsx3
-        self._pyttsx = pyttsx3.init()
-        self._pyttsx.setProperty("rate", self.rate)
+        self._q: queue.Queue = queue.Queue()
+        self._ready = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="jarvis-tts",
+        )
+        self._thread.start()
+        # Give engine init a moment so the first speak() isn't lost; if it
+        # takes longer, speak() still queues and plays once ready.
+        self._ready.wait(timeout=30)
 
-    def _init_piper(self) -> None:
-        if not self.piper_voice_path:
-            logger.warning("piper selected but no voice path — using pyttsx3")
-            self.engine_name = "pyttsx3"
-            self._init_pyttsx3()
-            return
-        from piper.voice import PiperVoice
-        self._piper = PiperVoice.load(self.piper_voice_path)
+    # ─── public API ─────────────────────────────────────────────────
 
     def speak(self, text: str) -> None:
-        """Speak ``text`` aloud. Blocks until done."""
+        """Queue ``text`` to be spoken. Non-blocking — plays on the TTS thread."""
         text = (text or "").strip()
-        if not text:
+        if text:
+            self._q.put(text)
+
+    def close(self) -> None:
+        self._q.put(_STOP)
+
+    # ─── the dedicated TTS thread ───────────────────────────────────
+
+    def _emit_state(self, state: str) -> None:
+        if self._on_state:
+            try:
+                self._on_state(state)
+            except Exception:
+                pass
+
+    def _run(self) -> None:
+        self._init_engine()
+        self._ready.set()
+        speaking = False
+        while True:
+            item = self._q.get()
+            if item is _STOP:
+                return
+            if not speaking:
+                speaking = True
+                self._emit_state("speaking")
+            try:
+                self._say(item)
+            except Exception as exc:  # never let one bad utterance kill TTS
+                logger.warning("TTS: speak failed: %s", exc)
+            if self._q.empty():
+                speaking = False
+                self._emit_state("idle")
+
+    def _init_engine(self) -> None:
+        if self._want_engine == "piper" and self._init_piper():
+            self._engine = "piper"
+            logger.info("TTS: Piper neural voice ready")
             return
-        if self.engine_name == "pyttsx3":
+        if self._want_engine == "piper":
+            logger.warning("TTS: Piper unavailable — falling back to Windows SAPI")
+        if self._init_pyttsx3():
+            self._engine = "pyttsx3"
+            logger.info("TTS: Windows SAPI (pyttsx3) ready")
+            return
+        self._engine = None
+        logger.error("TTS: no working speech engine — Jarvis cannot speak")
+
+    def _init_piper(self) -> bool:
+        path = self.piper_voice_path
+        if not path or not os.path.exists(path):
+            logger.warning(
+                "TTS: Piper voice model not found at %r "
+                "(run: python scripts/setup_piper.py)", path,
+            )
+            return False
+        try:
+            from piper import PiperVoice
+            config = path + ".json" if os.path.exists(path + ".json") else None
+            self._piper = PiperVoice.load(path, config_path=config)
+            return True
+        except Exception as exc:
+            logger.warning("TTS: Piper init failed: %s", exc)
+            return False
+
+    def _init_pyttsx3(self) -> bool:
+        try:
+            import pyttsx3
+            self._pyttsx = pyttsx3.init()
+            self._pyttsx.setProperty("rate", self.rate)
+            return True
+        except Exception as exc:
+            logger.warning("TTS: pyttsx3 init failed: %s", exc)
+            return False
+
+    def _say(self, text: str) -> None:
+        if self._engine == "piper":
+            self._say_piper(text)
+        elif self._engine == "pyttsx3":
             self._pyttsx.say(text)
             self._pyttsx.runAndWait()
-        elif self.engine_name == "piper":
-            self._speak_piper(text)
+        # else: no engine — drop silently (already logged at init)
 
-    def _speak_piper(self, text: str) -> None:
+    def _say_piper(self, text: str) -> None:
         import io
         import wave
 
+        import numpy as np
         import sounddevice as sd
 
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:
-            self._piper.synthesize(text, wf)
+            self._piper.synthesize_wav(text, wf)
         buf.seek(0)
         with wave.open(buf, "rb") as wf:
             frames = wf.readframes(wf.getnframes())
             rate = wf.getframerate()
-        import numpy as np
         audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
         sd.play(audio, rate)
         sd.wait()

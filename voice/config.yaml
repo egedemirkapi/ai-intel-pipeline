@@ -56,8 +56,10 @@ stt:
   compute_type: "int8"      # int8 = fast on CPU; float16 needs GPU
 
 tts:
-  # "pyttsx3" = Windows SAPI5, fully local, zero download (default).
-  # "piper"   = higher quality; requires a Piper voice model + binary.
-  engine: "pyttsx3"
-  rate: 185                 # pyttsx3 words-per-minute
-  piper_voice_path: ""      # only used when engine: piper
+  # "piper"   = neural voice (natural). Run `python scripts/setup_piper.py`
+  #             once to download the voice model.
+  # "pyttsx3" = Windows SAPI5 — instant, robotic; used automatically as a
+  #             fallback if Piper is unavailable.
+  engine: "piper"
+  rate: 185                                    # pyttsx3 words-per-minute
+  piper_voice_path: "models/en_GB-alan-medium.onnx"   # relative to voice/

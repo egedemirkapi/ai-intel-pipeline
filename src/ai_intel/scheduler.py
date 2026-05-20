@@ -29,12 +29,36 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
     window_hours = config["delivery"]["digest_window_hours"]
     output_dir = Path("output")
 
+    brief_cfg = config.get("briefing", {}) or {}
+    brain_url = brief_cfg.get("brain_url", "http://127.0.0.1:9999").rstrip("/")
+
     async def collect_job():
         # 24h window so slow RSS feeds (weekly newsletters, etc.) get caught.
         # DB-level url_hash dedup prevents duplicates across overlapping cycles.
         since = datetime.now(timezone.utc) - timedelta(hours=24)
         result = await run_all_collectors(engine, collectors, since=since)
         logger.info(f"Collect cycle: {result}")
+        # Tell the Brain new intel landed so the dashboard feed refreshes
+        # live (the collector and Brain are separate processes).
+        new_items = sum(
+            v for k, v in result.items()
+            if k != "failures" and isinstance(v, int)
+        )
+        if new_items > 0:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    await client.post(
+                        f"{brain_url}/events/intel",
+                        json={
+                            "count": new_items,
+                            "sources": [
+                                k for k, v in result.items()
+                                if k != "failures" and isinstance(v, int) and v > 0
+                            ],
+                        },
+                    )
+            except Exception as exc:
+                logger.debug("intel-event push failed (Brain not running?): %s", exc)
 
     async def enrich_job():
         n = await enrich_new_items(engine, model=enrich_model)
@@ -53,9 +77,6 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
         # don't grow unbounded over 24/7 operation.
         summary = run_daily_maintenance(engine)
         logger.info("Maintenance prune: %s", summary)
-
-    brief_cfg = config.get("briefing", {}) or {}
-    brain_url = brief_cfg.get("brain_url", "http://127.0.0.1:9999").rstrip("/")
 
     async def briefing_job():
         # Assemble the daily brief and hand it to the Brain's speak queue;

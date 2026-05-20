@@ -67,6 +67,10 @@ class JarvisVoice:
     # ─── Lifecycle ──────────────────────────────────────────────────
 
     def start(self) -> None:
+        """Bring the tray up. Every subsystem is isolated — one failing
+        (no mic, no model, missing dep) degrades that feature only and
+        is logged; the tray still starts. Each stage logs so a hang is
+        visible in the terminal."""
         from voice.audio import MicStream
         from voice.clap import ClapDetector
         from voice.stt import Transcriber
@@ -74,76 +78,123 @@ class JarvisVoice:
         from voice.wake import WakeWordDetector
 
         ac = self.cfg["audio"]
-        self.mic = MicStream(
-            sample_rate=ac["sample_rate"],
-            block_ms=ac["block_ms"],
-            input_device=ac["input_device"],
-        )
 
-        logger.info("loading speech-to-text model ...")
-        sc = self.cfg["stt"]
-        self.stt = Transcriber(
-            model_size=sc["model_size"],
-            language=sc["language"],
-            compute_type=sc["compute_type"],
-        )
-        tc = self.cfg["tts"]
-        self.tts = Speaker(
-            engine=tc["engine"],
-            rate=tc["rate"],
-            piper_voice_path=tc.get("piper_voice_path", ""),
-        )
-
-        wc = self.cfg["wake"]
-        self.wake = WakeWordDetector(
-            self._on_utterance,
-            model=wc["model"],
-            threshold=wc["threshold"],
-            sample_rate=ac["sample_rate"],
-            silence_ms=wc["silence_ms"],
-            max_utterance_s=wc["max_utterance_s"],
-        )
-        self.mic.add_listener(self.wake.feed)
-
-        cc = self.cfg["clap"]
-        if cc.get("enabled", True):
-            self.clap = ClapDetector(
-                self._on_two_claps,
-                rms_threshold=cc["rms_threshold"],
-                min_gap_ms=cc["min_gap_ms"],
-                max_gap_ms=cc["max_gap_ms"],
-                cooldown_s=cc["cooldown_s"],
+        # ── microphone ───────────────────────────────────────────────
+        logger.info("voice: opening microphone ...")
+        try:
+            self.mic = MicStream(
+                sample_rate=ac["sample_rate"],
+                block_ms=ac["block_ms"],
+                input_device=ac["input_device"],
             )
-            self.mic.add_listener(self.clap.feed)
+        except Exception as exc:
+            logger.error("voice: microphone unavailable — wake/clap disabled: %s", exc)
+            self.mic = None
 
-        # Global hotkeys — bound from each workflow's trigger.hotkey.
-        from voice.hotkeys import HotkeyBinder
-        self.hotkeys = HotkeyBinder(self.brain_url, self._on_hotkey)
-        self.hotkeys.start()
+        # ── speech-to-text ──────────────────────────────────────────
+        logger.info("voice: loading speech-to-text model (this can take a few seconds) ...")
+        sc = self.cfg["stt"]
+        try:
+            self.stt = Transcriber(
+                model_size=sc["model_size"],
+                language=sc["language"],
+                compute_type=sc["compute_type"],
+            )
+            logger.info("voice: speech-to-text ready")
+        except Exception as exc:
+            logger.error("voice: STT unavailable — spoken commands disabled: %s", exc)
+            self.stt = None
 
-        # Proactive speech — poll the Brain's speak queue so Jarvis can
-        # talk unprompted (the scheduled briefing, live fleet narration).
+        # ── text-to-speech ──────────────────────────────────────────
+        logger.info("voice: starting text-to-speech ...")
+        tc = self.cfg["tts"]
+        # Resolve a relative Piper model path against the voice/ directory
+        # so it works regardless of the process's working directory.
+        piper_path = tc.get("piper_voice_path", "")
+        if piper_path and not Path(piper_path).is_absolute():
+            piper_path = str(Path(__file__).parent / piper_path)
+        try:
+            self.tts = Speaker(
+                engine=tc["engine"], rate=tc["rate"], piper_voice_path=piper_path,
+                on_state=self._post_voice_state,
+            )
+        except Exception as exc:
+            logger.error("voice: TTS failed to start: %s", exc)
+            self.tts = None
+
+        # ── wake word ('Hey Jarvis') ─────────────────────────────────
+        if self.mic is not None:
+            logger.info("voice: initializing wake word ...")
+            wc = self.cfg["wake"]
+            try:
+                self.wake = WakeWordDetector(
+                    self._on_utterance,
+                    model=wc["model"], threshold=wc["threshold"],
+                    sample_rate=ac["sample_rate"],
+                    silence_ms=wc["silence_ms"],
+                    max_utterance_s=wc["max_utterance_s"],
+                    on_wake=lambda: self._post_voice_state("listening"),
+                )
+                self.mic.add_listener(self.wake.feed)
+                logger.info("voice: wake word ready")
+            except Exception as exc:
+                logger.error("voice: wake word unavailable: %s", exc)
+                self.wake = None
+
+        # ── two-clap detector ───────────────────────────────────────
+        cc = self.cfg["clap"]
+        if self.mic is not None and cc.get("enabled", True):
+            try:
+                self.clap = ClapDetector(
+                    self._on_two_claps,
+                    rms_threshold=cc["rms_threshold"],
+                    min_gap_ms=cc["min_gap_ms"],
+                    max_gap_ms=cc["max_gap_ms"],
+                    cooldown_s=cc["cooldown_s"],
+                )
+                self.mic.add_listener(self.clap.feed)
+                logger.info("voice: two-clap detector ready")
+            except Exception as exc:
+                logger.error("voice: clap detector unavailable: %s", exc)
+
+        # ── global hotkeys ──────────────────────────────────────────
+        try:
+            from voice.hotkeys import HotkeyBinder
+            self.hotkeys = HotkeyBinder(self.brain_url, self._on_hotkey)
+            self.hotkeys.start()
+        except Exception as exc:
+            logger.error("voice: hotkeys unavailable: %s", exc)
+
+        # ── proactive speech poller ─────────────────────────────────
         speak_cfg = self.cfg.get("speak", {})
         if speak_cfg.get("poll_enabled", True):
-            from voice.speakpoller import SpeakPoller
-            self.speak_poller = SpeakPoller(
-                self.brain_url, self._on_speak,
-                interval_s=speak_cfg.get("poll_interval_s", 4.0),
-            )
-            self.speak_poller.start()
+            try:
+                from voice.speakpoller import SpeakPoller
+                self.speak_poller = SpeakPoller(
+                    self.brain_url, self._on_speak,
+                    interval_s=speak_cfg.get("poll_interval_s", 4.0),
+                )
+                self.speak_poller.start()
+            except Exception as exc:
+                logger.error("voice: speak poller unavailable: %s", exc)
 
-        # Context awareness — watch which app the user switches to.
+        # ── context-awareness poller ────────────────────────────────
         ctx_cfg = self.cfg.get("context", {})
         if ctx_cfg.get("enabled", True):
-            from voice.contextpoller import ContextPoller
-            self.context_poller = ContextPoller(
-                self.brain_url,
-                interval_s=ctx_cfg.get("poll_interval_s", 1.5),
-            )
-            self.context_poller.start()
+            try:
+                from voice.contextpoller import ContextPoller
+                self.context_poller = ContextPoller(
+                    self.brain_url,
+                    interval_s=ctx_cfg.get("poll_interval_s", 1.5),
+                )
+                self.context_poller.start()
+            except Exception as exc:
+                logger.error("voice: context poller unavailable: %s", exc)
 
+        # ── go ──────────────────────────────────────────────────────
         self._worker.start()
-        self.mic.start()
+        if self.mic is not None:
+            self.mic.start()
         logger.info(
             "Jarvis voice tray ready — say 'Hey Jarvis', clap twice, or use a hotkey."
         )
@@ -151,6 +202,8 @@ class JarvisVoice:
     def stop(self) -> None:
         if self.mic:
             self.mic.stop()
+        if self.tts:
+            self.tts.close()
         if self.hotkeys:
             self.hotkeys.stop()
         if self.speak_poller:
@@ -198,9 +251,14 @@ class JarvisVoice:
                 logger.exception("worker job %s failed: %s", kind, exc)
 
     def _handle_utterance(self, audio: np.ndarray) -> None:
+        if self.stt is None:
+            logger.warning("utterance ignored — speech-to-text is unavailable")
+            return
+        self._post_voice_state("thinking")
         text = self.stt.transcribe(audio, sample_rate=self.cfg["audio"]["sample_rate"])
         if not text:
             logger.info("empty transcription — skipping")
+            self._post_voice_state("idle")
             return
         logger.info("you said: %s", text)
         # A spoken phrase may match a workflow's voice_phrases — try that
@@ -235,6 +293,7 @@ class JarvisVoice:
 
     def _handle_clap(self) -> None:
         logger.info("two-clap → /trigger/clap")
+        self._post_voice_state("thinking")
         fired: list = []
         try:
             r = httpx.post(f"{self.brain_url}/trigger/clap", timeout=60.0)
@@ -288,6 +347,18 @@ class JarvisVoice:
             return
         logger.info("speaking (proactive): %s", text[:80])
         self.tts.speak(text)
+
+    def _post_voice_state(self, state: str) -> None:
+        """Report Jarvis's voice state to the Brain so the dashboard orb
+        animates (listening / thinking / speaking / idle). Fire-and-forget."""
+        try:
+            httpx.post(
+                f"{self.brain_url}/voice/state",
+                json={"state": state},
+                timeout=5.0,
+            )
+        except Exception:
+            pass
 
     def _ask_brain(self, message: str) -> str:
         try:

@@ -101,6 +101,15 @@ class ContextUpdate(BaseModel):
     process: str = ""
     title: str = ""
 
+
+class IntelEvent(BaseModel):
+    count: int = 0
+    sources: list[str] = []
+
+
+class VoiceStateUpdate(BaseModel):
+    state: str  # idle | listening | thinking | speaking
+
 logger = logging.getLogger(__name__)
 
 # Engine path resolved at startup. Override via env JARVIS_DB_PATH for tests.
@@ -560,6 +569,32 @@ def create_app() -> FastAPI:
         """Drain the speak queue — the voice tray polls this."""
         items = app.state.speak_queue.drain()
         return {"utterances": [u.to_dict() for u in items]}
+
+    # ─── Voice presence (drives the dashboard orb) ──────────────────
+    @app.post("/voice/state")
+    def voice_state(req: VoiceStateUpdate) -> dict[str, Any]:
+        """The voice tray reports its state (idle/listening/thinking/
+        speaking). Re-broadcast so the dashboard's Jarvis orb animates."""
+        app.state.bus.publish(FleetEvent(
+            type="voice_state",
+            summary=f"voice: {req.state}",
+            payload={"state": req.state},
+        ))
+        return {"ok": True}
+
+    # ─── Live intel signal ──────────────────────────────────────────
+    @app.post("/events/intel")
+    def events_intel(req: IntelEvent) -> dict[str, Any]:
+        """The collector (a separate process) calls this when it ingests
+        new intel — the Brain re-broadcasts it on the event bus so the
+        dashboard's news feed refreshes live."""
+        if req.count > 0:
+            app.state.bus.publish(FleetEvent(
+                type="intel_collected",
+                summary=f"{req.count} new intel item(s)",
+                payload={"count": req.count, "sources": req.sources},
+            ))
+        return {"published": req.count > 0}
 
     # ─── WebSocket /events ──────────────────────────────────────────
     @app.websocket("/events")

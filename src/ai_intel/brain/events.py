@@ -32,6 +32,7 @@ EventType = Literal[
     "intel_collected",
     "workflow_started",
     "workflow_finished",
+    "voice_state",
 ]
 
 

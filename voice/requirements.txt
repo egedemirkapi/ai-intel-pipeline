@@ -19,7 +19,9 @@ openwakeword>=0.6.0
 # Speech-to-text — local Whisper via CTranslate2
 faster-whisper>=1.0.0
 
-# Text-to-speech — Windows SAPI5 (local, no model download)
+# Text-to-speech — Piper neural voice (local; run scripts/setup_piper.py
+# once for the voice model) with Windows SAPI5 as an automatic fallback.
+piper-tts>=1.4.0
 pyttsx3>=2.90
 
 # HTTP to the Brain + config

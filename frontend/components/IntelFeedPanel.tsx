@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, CollectorStatus, IntelItem } from "@/lib/api";
 import Card from "@/components/ui/Card";
 import StatusDot from "@/components/ui/StatusDot";
@@ -13,26 +13,34 @@ function ago(minutes: number | null): string {
   return `${h}h ${minutes % 60}m ago`;
 }
 
-export default function IntelFeedPanel() {
+export default function IntelFeedPanel({ pulse = 0 }: { pulse?: number }) {
   const [items, setItems] = useState<IntelItem[]>([]);
   const [stats, setStats] = useState<CollectorStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  const load = useCallback(() => {
+    api
+      .intel(24)
+      .then((d) => {
+        setItems(d);
+        setErr(null);
+      })
+      .catch((e) => setErr(String(e)));
+    api.collectorStatus().then(setStats).catch(() => {});
+  }, []);
+
+  // Mount + a slow safety poll.
   useEffect(() => {
-    const load = () => {
-      api
-        .intel(24)
-        .then((d) => {
-          setItems(d);
-          setErr(null);
-        })
-        .catch((e) => setErr(String(e)));
-      api.collectorStatus().then(setStats).catch(() => {});
-    };
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
+
+  // Live: refetch the instant a fleet event pulses (an intel_collected
+  // event fires here within ~1s of the collector ingesting news).
+  useEffect(() => {
+    if (pulse > 0) load();
+  }, [pulse, load]);
 
   // The collector runs every 2h via Task Scheduler. Flag "stale" if the
   // last collection was over 3h ago — means the scheduler/daemon may

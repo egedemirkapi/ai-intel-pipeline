@@ -34,8 +34,10 @@ class WakeWordDetector:
         sample_rate: int = 16000,
         silence_ms: int = 800,
         max_utterance_s: int = 12,
+        on_wake: Callable[[], None] | None = None,
     ) -> None:
         self.on_utterance = on_utterance
+        self.on_wake = on_wake  # fired the instant the wake word triggers
         self.threshold = threshold
         self.sample_rate = sample_rate
         self.silence_samples = int(sample_rate * silence_ms / 1000)
@@ -48,7 +50,15 @@ class WakeWordDetector:
         # openWakeWord ships no model weights in the wheel. Fetch them on
         # first use; this is idempotent (skips files already on disk, so no
         # network on later runs) and pulls both .onnx and .tflite variants.
-        openwakeword.utils.download_models(model_names=[model])
+        # Guarded: a network failure here must not hang tray startup — if
+        # the models are already cached, Model() below still loads fine.
+        try:
+            openwakeword.utils.download_models(model_names=[model])
+        except Exception as exc:
+            logger.warning(
+                "wake: model download failed (using cached models if present): %s",
+                exc,
+            )
 
         # Force the ONNX backend. onnxruntime is our declared dependency and
         # has Windows wheels; tflite_runtime (openWakeWord's default) has no
@@ -84,6 +94,11 @@ class WakeWordDetector:
         self._silence_run = 0
         self._capture_started = time.monotonic()
         self._buf = np.zeros(0, dtype=np.float32)
+        if self.on_wake:
+            try:
+                self.on_wake()
+            except Exception:
+                pass
 
     def _capture(self, frame: np.ndarray) -> None:
         self._utterance.append(frame)

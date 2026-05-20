@@ -384,6 +384,55 @@ async def _h_context_app(engine) -> dict[str, Any]:
     return {"context": ctx}
 
 
+async def _h_apps_open(engine, *, name: str) -> dict[str, Any]:
+    """Launch a Windows app by name. The user asked in chat — that IS
+    consent — so the app is allowlisted then launched. Resolves the name
+    against the installed-app list for a reliable launch."""
+    from ai_intel.workflows.actions.apps import action_apps_launch
+    from ai_intel.workflows.app_scanner import add_to_allowlist, list_installed_apps
+
+    name = (name or "").strip()
+    if not name:
+        return {"error": "no app name given"}
+
+    nl = name.lower()
+    apps = list_installed_apps()
+    match = next((a for a in apps if a["name"].lower() == nl), None)
+    if match is None:
+        match = next((a for a in apps if nl in a["name"].lower()), None)
+
+    if match:
+        add_to_allowlist(match["app_id"], match["name"])
+        return await action_apps_launch(
+            engine, app_id=match["app_id"], name=match["name"],
+        )
+    # Not in the scanned list — try a bare-name launch (KNOWN_APPS / OS).
+    add_to_allowlist("", name)
+    return await action_apps_launch(engine, name=name)
+
+
+async def _h_web_open(engine, *, url: str = "", urls: list | None = None) -> dict[str, Any]:
+    """Open one or more URLs / sites in the browser."""
+    from ai_intel.workflows.actions.tabs import action_tabs_open_set
+
+    targets: list[str] = []
+    if url:
+        targets.append(url)
+    if urls:
+        targets.extend(urls)
+    norm: list[str] = []
+    for t in targets:
+        t = str(t).strip()
+        if not t:
+            continue
+        if not (t.startswith("http://") or t.startswith("https://")):
+            t = "https://" + t
+        norm.append(t)
+    if not norm:
+        return {"error": "no url given"}
+    return await action_tabs_open_set(engine, urls=norm)
+
+
 # ─── Tool registry ─────────────────────────────────────────────────
 
 
@@ -599,6 +648,38 @@ def build_registry() -> dict[str, Tool]:
             ),
             input_schema={"type": "object", "properties": {}, "required": []},
             handler=_h_context_app,
+        ),
+        "apps.open": Tool(
+            name="apps.open",
+            description=(
+                "Launch a Windows desktop app by name. Use when the user "
+                "says 'open <app>' / 'launch <app>' / 'start <app>' — e.g. "
+                "'open Spotify', 'open Cursor', 'open Claude'. Pass the "
+                "app name as the user said it."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"name": {"type": "string", "description": "App name, e.g. 'Spotify'"}},
+                "required": ["name"],
+            },
+            handler=_h_apps_open,
+        ),
+        "web.open": Tool(
+            name="web.open",
+            description=(
+                "Open one or more websites / URLs in the browser. Use when "
+                "the user says 'open <site>' and it's a website (e.g. 'open "
+                "claude.ai', 'open my email', 'pull up GitHub'). A bare "
+                "domain like 'claude.ai' is fine — https is added."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "A single URL or domain"},
+                    "urls": {"type": "array", "items": {"type": "string"}, "description": "Several URLs"},
+                },
+            },
+            handler=_h_web_open,
         ),
         "workflow.run": Tool(
             name="workflow.run",

@@ -61,5 +61,9 @@
 "brief.get"                = "allow"   # chat tool: read the current briefing
 "context.app"              = "allow"   # chat tool: what app the user is in
 
+# ── Chat: open things on command ─────────────────────────────────────
+"apps.open"                = "allow"   # chat tool: launch a Windows app by name
+"web.open"                 = "allow"   # chat tool: open a URL / website
+
 # ── Google Workspace — Classroom read added ──────────────────────────
 "gworkspace.read_classroom" = "allow"

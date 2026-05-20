@@ -18,6 +18,9 @@ output/failed/
 # OpenJarvis local debug/runner scripts (not part of the project)
 .oj-*
 
+# Piper voice model — downloaded by scripts/setup_piper.py (~60MB)
+voice/models/
+
 # Python
 __pycache__/
 *.py[cod]
