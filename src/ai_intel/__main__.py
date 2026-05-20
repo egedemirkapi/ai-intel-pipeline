@@ -93,6 +93,14 @@ async def amain(once: bool):
         await run_once(engine, config)
         return
 
+    # Daemon mode — only one collector daemon may run at a time, so the
+    # Windows scheduled task and a manual `python -m ai_intel` can't
+    # double up and hammer the DB.
+    from ai_intel.single_instance import acquire_single_instance
+    if not acquire_single_instance("ai-intel-collector-daemon"):
+        log.info("An ai-intel collector daemon is already running — exiting.")
+        return
+
     is_first_run = not (Path("data") / ".started").exists()
     if is_first_run:
         await run_first_digest_now(engine, config)
