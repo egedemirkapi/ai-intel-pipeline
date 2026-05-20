@@ -79,7 +79,7 @@ workflows:
     description: Refresh trends + propose 3 fresh ideas, then notify
     trigger:
       button: true
-      voice_phrases: ["morning brief", "run the morning brief"]
+      voice_phrases: ["run the morning brief", "refresh the fleet"]
     steps:
       - agent.run:
           agent_id: synthesizer
@@ -90,3 +90,14 @@ workflows:
       - notify:
           title: Morning Brief
           body: "Synthesis done. Ideation: {{ steps.1.summary }}"
+
+  daily_brief:
+    description: Assemble the briefing — top news, calendar, homework, suggestions
+    trigger:
+      button: true
+      voice_phrases: ["my briefing", "daily brief", "brief me", "what's my briefing"]
+    steps:
+      - brief.compose: {}
+      - notify:
+          title: Your Briefing
+          body: "{{ steps.0.summary }}"

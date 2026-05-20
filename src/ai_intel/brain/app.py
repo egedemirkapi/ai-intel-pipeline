@@ -20,6 +20,10 @@ Routes:
     DEL  /workflows/{name}  delete a workflow
     POST /workflows/validate  check a definition without saving
     POST /workflow/{name}   run a YAML workflow by name (Phase 14)
+    GET  /brief             assemble the daily briefing
+    GET  /interests         list the user's interests
+    POST /interests         add an interest
+    DEL  /interests/{id}    remove an interest
     WS   /events            live FleetEvent stream
 
 Everything is read-only by default; writes happen via the /chat tool
@@ -77,6 +81,10 @@ class AppAllow(BaseModel):
 
 class VoiceTrigger(BaseModel):
     transcript: str
+
+
+class InterestCreate(BaseModel):
+    text: str
 
 logger = logging.getLogger(__name__)
 
@@ -447,6 +455,34 @@ def create_app() -> FastAPI:
         if not removed:
             raise HTTPException(status_code=404, detail=f"{app_id!r} not on allowlist")
         return {"removed": app_id}
+
+    # ─── Briefing + interests ───────────────────────────────────────
+    @app.get("/brief")
+    async def brief() -> dict[str, Any]:
+        """Assemble the briefing — news, calendar, homework, suggestions."""
+        from ai_intel.think.brief import build_brief
+        return await build_brief(app.state.engine)
+
+    @app.get("/interests")
+    def interests_list() -> list[dict[str, Any]]:
+        from ai_intel.think.interests import list_interests
+        return list_interests(app.state.engine)
+
+    @app.post("/interests")
+    def interest_add(req: InterestCreate) -> dict[str, Any]:
+        from ai_intel.think.interests import add_interest
+        text = req.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="interest text is empty")
+        new_id = add_interest(app.state.engine, text)
+        return {"id": new_id, "text": text}
+
+    @app.delete("/interests/{note_id}")
+    def interest_delete(note_id: int) -> dict[str, Any]:
+        from ai_intel.think.interests import delete_interest
+        if not delete_interest(app.state.engine, note_id):
+            raise HTTPException(status_code=404, detail=f"no interest id={note_id}")
+        return {"deleted": note_id}
 
     # ─── WebSocket /events ──────────────────────────────────────────
     @app.websocket("/events")

@@ -9,6 +9,7 @@ Subcommands:
     init                      Write the bundled default to ~/.jarvis/tools.toml.
     recall <query>            Semantic top-k recall over memory.
     note <text>               Add a personal note to memory.
+    interest [<text>]         Add an interest, or list them (seeds the briefing).
 
 This entrypoint deliberately does NOT touch the running daemon — it only
 inspects/edits user-level policy, the approval queue, and the memory store.
@@ -170,6 +171,28 @@ def _cmd_note(args: argparse.Namespace) -> int:
     engine = _open_engine(db_path)
     note_id = add_note(engine, args.text, source=args.source)
     print(f"saved note #{note_id} ({len(args.text)} chars, source={args.source})")
+    return 0
+
+
+def _cmd_interest(args: argparse.Namespace) -> int:
+    """Add an interest (with text) or list all interests (without)."""
+    from ai_intel.think.interests import add_interest, list_interests
+
+    db_path = Path(args.db) if args.db else DEFAULT_DB_PATH
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = _open_engine(db_path)
+
+    if args.text:
+        new_id = add_interest(engine, args.text)
+        print(f"added interest #{new_id}: {args.text}")
+        return 0
+
+    interests = list_interests(engine)
+    if not interests:
+        print('(no interests yet — add one: jarvis interest "AI agents")')
+        return 0
+    for it in interests:
+        print(f"#{it['id']}  {it['text']}")
     return 0
 
 
@@ -381,6 +404,13 @@ def build_parser() -> argparse.ArgumentParser:
     note.add_argument("--source", default="user_note", help="Tag (default: user_note)")
     note.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
     note.set_defaults(func=_cmd_note)
+
+    interest = sub.add_parser(
+        "interest", help="Add an interest, or list them (seeds the briefing)"
+    )
+    interest.add_argument("text", nargs="?", help="Interest text to add; omit to list")
+    interest.add_argument("--db", help=f"Path to items.db (default: {DEFAULT_DB_PATH})")
+    interest.set_defaults(func=_cmd_interest)
 
     agents = sub.add_parser("agents", help="Observe the agent fleet")
     agents_sub = agents.add_subparsers(dest="agents_cmd", required=True)

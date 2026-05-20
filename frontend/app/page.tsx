@@ -8,6 +8,7 @@ import IdeaBoard from "@/components/IdeaBoard";
 import IntelFeedPanel from "@/components/IntelFeedPanel";
 import TrendsPanel from "@/components/TrendsPanel";
 import RoutineButtons from "@/components/RoutineButtons";
+import BriefingPanel from "@/components/BriefingPanel";
 import StatusDot from "@/components/ui/StatusDot";
 import { useEvents } from "@/lib/useEvents";
 
@@ -62,6 +63,9 @@ export default function Dashboard() {
 
       {/* Quick-run routine buttons */}
       <RoutineButtons pulse={pulse} />
+
+      {/* The briefing — top news, calendar, homework, suggestions */}
+      <BriefingPanel />
 
       {/* Body: left column = fleet+trends, middle = ideas+intel, right = chat */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">

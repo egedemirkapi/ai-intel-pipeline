@@ -147,6 +147,46 @@ export interface AllowedApp {
   added_at?: string;
 }
 
+// ─── Briefing + interests ───────────────────────────────────────────
+
+export interface BriefNews {
+  id: number;
+  title: string;
+  url: string;
+  source: string;
+  ai_relevance: number | null;
+}
+export interface BriefEvent {
+  title: string;
+  start: string | null;
+  location: string | null;
+}
+export interface BriefAssignment {
+  title: string;
+  course: string | null;
+  due_date: string | null;
+}
+export interface BriefSuggestion {
+  id: number;
+  title: string;
+  url: string;
+  source: string;
+  score: number;
+}
+export interface Brief {
+  generated_at: string;
+  news: BriefNews[];
+  calendar: { summary: string; events: BriefEvent[] };
+  homework: { summary: string; assignments: BriefAssignment[] };
+  suggestions: BriefSuggestion[];
+  spoken: string;
+}
+export interface Interest {
+  id: number;
+  text: string;
+  created_at: string | null;
+}
+
 // ─── Endpoints ──────────────────────────────────────────────────────
 
 export const api = {
@@ -207,4 +247,12 @@ export const api = {
       "DELETE",
       `/apps/allow/${encodeURIComponent(app_id)}`,
     ),
+
+  // Briefing + interests
+  brief: () => getJson<Brief>("/brief"),
+  interests: () => getJson<Interest[]>("/interests"),
+  addInterest: (text: string) =>
+    sendJson<{ id: number; text: string }>("POST", "/interests", { text }),
+  deleteInterest: (id: number) =>
+    sendJson<{ deleted: number }>("DELETE", `/interests/${id}`),
 };

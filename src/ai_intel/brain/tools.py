@@ -366,6 +366,14 @@ async def _h_email_read(engine, *, max_messages: int = 15) -> dict[str, Any]:
     return {"messages": messages, "count": len(messages)}
 
 
+async def _h_brief_get(engine) -> dict[str, Any]:
+    """Assemble the user's current briefing — top news, calendar,
+    homework and interest-based suggestions, plus a spoken summary."""
+    from ai_intel.think.brief import build_brief
+
+    return await build_brief(engine)
+
+
 # ─── Tool registry ─────────────────────────────────────────────────
 
 
@@ -558,6 +566,18 @@ def build_registry() -> dict[str, Tool]:
                 },
             },
             handler=_h_email_read,
+        ),
+        "brief.get": Tool(
+            name="brief.get",
+            description=(
+                "Assemble the user's briefing — the top recent tech news, "
+                "their upcoming calendar, homework due soon, and "
+                "suggestions matched to their interests. Use when the "
+                "user asks 'what's my briefing', 'brief me', 'what "
+                "should I know today', or 'catch me up'."
+            ),
+            input_schema={"type": "object", "properties": {}, "required": []},
+            handler=_h_brief_get,
         ),
         "workflow.run": Tool(
             name="workflow.run",

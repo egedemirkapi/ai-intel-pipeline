@@ -53,7 +53,11 @@
 "classroom.check"          = "allow"   # workflow step → Classroom read
 "calendar.check"           = "allow"   # workflow step → Calendar read
 "email.check"              = "allow"   # workflow step → Gmail read (metadata only)
+"brief.compose"            = "allow"   # workflow step → assemble the daily brief
 "notify"                   = "allow"   # local desktop toast
+
+# ── Briefing ─────────────────────────────────────────────────────────
+"brief.get"                = "allow"   # chat tool: read the current briefing
 
 # ── Google Workspace — Classroom read added ──────────────────────────
 "gworkspace.read_classroom" = "allow"

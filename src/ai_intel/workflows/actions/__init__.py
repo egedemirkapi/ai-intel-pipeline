@@ -11,6 +11,7 @@ Adding a new action:
 """
 from ai_intel.workflows.actions.agent import action_agent_run
 from ai_intel.workflows.actions.apps import action_apps_launch
+from ai_intel.workflows.actions.brief import action_brief_compose
 from ai_intel.workflows.actions.calendar import action_calendar_check
 from ai_intel.workflows.actions.classroom import action_classroom_check
 from ai_intel.workflows.actions.gmail import action_email_check
@@ -26,6 +27,7 @@ ACTION_REGISTRY = {
     "classroom.check":   action_classroom_check,
     "calendar.check":    action_calendar_check,
     "email.check":       action_email_check,
+    "brief.compose":     action_brief_compose,
     "notify":            action_notify,
 }
 
