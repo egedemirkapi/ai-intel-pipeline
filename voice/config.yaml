@@ -41,6 +41,13 @@ speak:
     start: 22               # 24h clock; 22 = 10pm
     end: 8                  #            8  = 8am
 
+context:
+  # Context awareness — watch which app you switch to and fire any
+  # workflow with a matching `on_app` trigger. Pure local OS calls;
+  # nothing about your window activity leaves the machine.
+  enabled: true
+  poll_interval_s: 1.5      # how often to check the foreground window
+
 stt:
   # faster-whisper model size: tiny | base | small | medium
   # small ~ 600MB RAM, ~2s for 5s of speech on CPU. base is faster/rougher.

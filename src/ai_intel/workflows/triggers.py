@@ -19,7 +19,7 @@ _WORD_RE = re.compile(r"[a-z0-9]+")
 def workflows_with_trigger(kind: str, path: Path | None = None) -> list[str]:
     """Return the names of workflows whose ``trigger.<kind>`` is set.
 
-    ``kind`` is one of ``button``, ``clap``, ``hotkey``, ``voice``.
+    ``kind`` is one of ``button``, ``clap``, ``hotkey``, ``voice``, ``on_app``.
     """
     out: list[str] = []
     for name, wf in load_workflows(path).items():
@@ -31,6 +31,8 @@ def workflows_with_trigger(kind: str, path: Path | None = None) -> list[str]:
         elif kind == "hotkey" and trigger.get("hotkey"):
             out.append(name)
         elif kind == "voice" and trigger.get("voice_phrases"):
+            out.append(name)
+        elif kind == "on_app" and trigger.get("on_app"):
             out.append(name)
     return out
 
@@ -48,6 +50,29 @@ def hotkey_map(path: Path | None = None) -> dict[str, str]:
 def _normalize(text: str) -> str:
     """Lowercase, keep only words, collapse whitespace."""
     return " ".join(_WORD_RE.findall((text or "").lower()))
+
+
+def match_app(
+    process: str | None, title: str | None, path: Path | None = None,
+) -> list[str]:
+    """Return workflow names whose ``trigger.on_app`` matches the app.
+
+    ``on_app`` is a string or list of strings; a needle matches if it is
+    a case-insensitive substring of the process name OR the window title
+    (so "code", "Visual Studio Code", "cursor" all work).
+    """
+    hay = f"{process or ''} {title or ''}".lower()
+    if not hay.strip():
+        return []
+    out: list[str] = []
+    for name, wf in load_workflows(path).items():
+        on_app = (wf.get("trigger") or {}).get("on_app")
+        if not on_app:
+            continue
+        needles = [on_app] if isinstance(on_app, str) else on_app
+        if any(isinstance(n, str) and n.strip() and n.lower() in hay for n in needles):
+            out.append(name)
+    return out
 
 
 def match_voice(transcript: str, path: Path | None = None) -> str | None:

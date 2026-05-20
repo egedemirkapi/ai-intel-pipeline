@@ -374,6 +374,16 @@ async def _h_brief_get(engine) -> dict[str, Any]:
     return await build_brief(engine)
 
 
+async def _h_context_app(engine) -> dict[str, Any]:
+    """What app/window the user is currently focused on."""
+    from ai_intel.brain.context import get_current_context
+
+    ctx = get_current_context()
+    if not ctx:
+        return {"context": None, "note": "No foreground app has been reported yet."}
+    return {"context": ctx}
+
+
 # ─── Tool registry ─────────────────────────────────────────────────
 
 
@@ -578,6 +588,17 @@ def build_registry() -> dict[str, Tool]:
             ),
             input_schema={"type": "object", "properties": {}, "required": []},
             handler=_h_brief_get,
+        ),
+        "context.app": Tool(
+            name="context.app",
+            description=(
+                "What app or window the user is currently focused on. "
+                "Use when the user asks 'what am I doing', 'what am I "
+                "working on', or to tailor an answer to their current "
+                "context (e.g. they're in an IDE vs a browser)."
+            ),
+            input_schema={"type": "object", "properties": {}, "required": []},
+            handler=_h_context_app,
         ),
         "workflow.run": Tool(
             name="workflow.run",

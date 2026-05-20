@@ -39,6 +39,7 @@ from ai_intel.workflows.persist import (
 )
 from ai_intel.workflows.triggers import (
     hotkey_map,
+    match_app,
     match_voice,
     workflows_with_trigger,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "update_workflow",
     "validate_def",
     "hotkey_map",
+    "match_app",
     "match_voice",
     "workflows_with_trigger",
 ]

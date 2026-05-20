@@ -33,7 +33,7 @@ from ai_intel.workflows.engine import (
 )
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
-_VALID_TRIGGER_KEYS = {"button", "clap", "hotkey", "voice_phrases"}
+_VALID_TRIGGER_KEYS = {"button", "clap", "hotkey", "voice_phrases", "on_app"}
 
 
 class WorkflowError(ValueError):
@@ -139,6 +139,13 @@ def _validate_trigger(trigger: Any) -> list[str]:
     if phrases is not None:
         if not isinstance(phrases, list) or not all(isinstance(p, str) for p in phrases):
             errors.append("trigger.voice_phrases must be a list of strings")
+    on_app = trigger.get("on_app")
+    if on_app is not None:
+        ok = isinstance(on_app, str) or (
+            isinstance(on_app, list) and all(isinstance(a, str) for a in on_app)
+        )
+        if not ok:
+            errors.append("trigger.on_app must be an app name string or a list of strings")
     return errors
 
 

@@ -16,6 +16,7 @@ from ai_intel.workflows.actions.calendar import action_calendar_check
 from ai_intel.workflows.actions.classroom import action_classroom_check
 from ai_intel.workflows.actions.gmail import action_email_check
 from ai_intel.workflows.actions.notify import action_notify
+from ai_intel.workflows.actions.speak import action_speak
 from ai_intel.workflows.actions.tabs import action_tabs_open_set
 
 # Dotted name -> handler. The name is the capability key checked
@@ -28,6 +29,7 @@ ACTION_REGISTRY = {
     "calendar.check":    action_calendar_check,
     "email.check":       action_email_check,
     "brief.compose":     action_brief_compose,
+    "speak":             action_speak,
     "notify":            action_notify,
 }
 

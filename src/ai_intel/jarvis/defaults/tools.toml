@@ -54,10 +54,12 @@
 "calendar.check"           = "allow"   # workflow step → Calendar read
 "email.check"              = "allow"   # workflow step → Gmail read (metadata only)
 "brief.compose"            = "allow"   # workflow step → assemble the daily brief
+"speak"                    = "allow"   # workflow step → say a line aloud
 "notify"                   = "allow"   # local desktop toast
 
-# ── Briefing ─────────────────────────────────────────────────────────
+# ── Briefing + context ───────────────────────────────────────────────
 "brief.get"                = "allow"   # chat tool: read the current briefing
+"context.app"              = "allow"   # chat tool: what app the user is in
 
 # ── Google Workspace — Classroom read added ──────────────────────────
 "gworkspace.read_classroom" = "allow"

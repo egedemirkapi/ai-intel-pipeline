@@ -108,6 +108,7 @@ export interface WorkflowTrigger {
   clap?: boolean;
   hotkey?: string | null;
   voice_phrases?: string[];
+  on_app?: string | string[] | null;
 }
 // A step is a single-key map {action: args}.
 export type WorkflowStep = Record<string, Record<string, unknown>>;

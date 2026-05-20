@@ -26,6 +26,8 @@ Routes:
     DEL  /interests/{id}    remove an interest
     POST /speak             queue an utterance for the voice tray
     GET  /speak/pending     drain the speak queue (voice tray polls this)
+    POST /context/app       report the foreground app (fires on_app workflows)
+    GET  /context           the current foreground-app context
     WS   /events            live FleetEvent stream
 
 Everything is read-only by default; writes happen via the /chat tool
@@ -93,6 +95,11 @@ class InterestCreate(BaseModel):
 class SpeakRequest(BaseModel):
     text: str
     kind: str = "manual"
+
+
+class ContextUpdate(BaseModel):
+    process: str = ""
+    title: str = ""
 
 logger = logging.getLogger(__name__)
 
@@ -451,6 +458,36 @@ def create_app() -> FastAPI:
             payload={"workflow": name, "ok": ok, "trigger": "voice"},
         ))
         return {"matched": True, "workflow": name, "result": result}
+
+    # ─── Context awareness — foreground-app tracking ────────────────
+    @app.post("/context/app")
+    async def context_app(req: ContextUpdate) -> dict[str, Any]:
+        """The voice tray reports the user switched apps. Records the
+        context and fires any workflow with a matching on_app trigger."""
+        from ai_intel.brain.context import set_current_context
+        from ai_intel.workflows import match_app, run_workflow
+
+        set_current_context(req.process, req.title)
+        fired = []
+        for name in match_app(req.process, req.title):
+            result = await run_workflow(app.state.engine, name)
+            ok = result.get("ok")
+            fired.append({"workflow": name, "ok": ok})
+            app.state.bus.publish(FleetEvent(
+                type="workflow_finished",
+                summary=f"app context → {name}",
+                payload={"workflow": name, "ok": ok, "trigger": "on_app"},
+            ))
+        return {
+            "context": {"process": req.process, "title": req.title},
+            "fired": fired,
+        }
+
+    @app.get("/context")
+    def context_get() -> dict[str, Any]:
+        """The current foreground-app context."""
+        from ai_intel.brain.context import get_current_context
+        return {"context": get_current_context() or None}
 
     # ─── Installed apps + launch allowlist ──────────────────────────
     @app.get("/apps/installed")

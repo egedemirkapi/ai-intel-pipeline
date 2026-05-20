@@ -31,3 +31,6 @@ windows-toasts>=1.1.0 ; sys_platform == "win32"
 
 # Global hotkeys — binds a workflow's trigger.hotkey system-wide
 keyboard>=0.13.5
+
+# Foreground-app detection for context awareness (on_app triggers)
+psutil>=5.9.0

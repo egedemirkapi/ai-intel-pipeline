@@ -15,6 +15,10 @@ const ACTIONS = [
   "apps.launch",
   "agent.run",
   "classroom.check",
+  "calendar.check",
+  "email.check",
+  "brief.compose",
+  "speak",
   "notify",
 ] as const;
 const AGENTS = ["saturator", "synthesizer", "proposer", "evaluator", "weekly_ideation"];
@@ -34,6 +38,14 @@ function defaultArgs(action: string): Record<string, unknown> {
       return { agent_id: "synthesizer" };
     case "classroom.check":
       return { days_ahead: 7 };
+    case "calendar.check":
+      return { days_ahead: 7 };
+    case "email.check":
+      return { max_messages: 15 };
+    case "brief.compose":
+      return {};
+    case "speak":
+      return { text: "" };
     default:
       return { title: "Jarvis", body: "" };
   }
@@ -48,6 +60,14 @@ function toEditSteps(steps: WorkflowStep[]): EditStep[] {
 
 function fromEditSteps(steps: EditStep[]): WorkflowStep[] {
   return steps.map((s) => ({ [s.action]: s.args }));
+}
+
+// trigger.on_app may be a string or a list — the editor edits it as a
+// single comma-joined string.
+function asAppString(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v.filter((x) => typeof x === "string").join(", ");
+  return "";
 }
 
 export default function RoutineEditor({
@@ -70,6 +90,7 @@ export default function RoutineEditor({
     initial?.trigger?.voice_phrases ?? [],
   );
   const [phraseInput, setPhraseInput] = useState("");
+  const [onApp, setOnApp] = useState(asAppString(initial?.trigger?.on_app));
   const [steps, setSteps] = useState<EditStep[]>(
     initial ? toEditSteps(initial.steps) : [{ action: "notify", args: defaultArgs("notify") }],
   );
@@ -87,6 +108,7 @@ export default function RoutineEditor({
       clap: trgClap,
       hotkey: hotkey.trim() || null,
       voice_phrases: phrases,
+      on_app: onApp.trim() || null,
     },
     steps: fromEditSteps(steps),
   });
@@ -98,6 +120,7 @@ export default function RoutineEditor({
     setTrgClap(!!def.trigger?.clap);
     setHotkey(def.trigger?.hotkey ?? "");
     setPhrases(def.trigger?.voice_phrases ?? []);
+    setOnApp(asAppString(def.trigger?.on_app));
     setSteps(toEditSteps(def.steps || []));
   };
 
@@ -270,6 +293,17 @@ export default function RoutineEditor({
                 value={hotkey}
                 onChange={(e) => setHotkey(e.target.value)}
                 placeholder="ctrl+alt+s"
+                className="w-56"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-slate-500">
+                When this app opens (process or window name — blank for none)
+              </label>
+              <Input
+                value={onApp}
+                onChange={(e) => setOnApp(e.target.value)}
+                placeholder="e.g. Code.exe, cursor, chrome"
                 className="w-56"
               />
             </div>
@@ -482,7 +516,7 @@ function StepArgs({
     );
   }
 
-  if (step.action === "classroom.check") {
+  if (step.action === "classroom.check" || step.action === "calendar.check") {
     return (
       <div className="flex items-center gap-2">
         <label className="text-xs text-slate-400">days ahead</label>
@@ -493,6 +527,38 @@ function StepArgs({
           className="w-24"
         />
       </div>
+    );
+  }
+
+  if (step.action === "email.check") {
+    return (
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-slate-400">max messages</label>
+        <Input
+          type="number"
+          value={String(a.max_messages ?? 15)}
+          onChange={(e) => setArg("max_messages", Number(e.target.value) || 0)}
+          className="w-24"
+        />
+      </div>
+    );
+  }
+
+  if (step.action === "brief.compose") {
+    return (
+      <p className="text-xs text-slate-500">
+        Assembles the briefing — no arguments.
+      </p>
+    );
+  }
+
+  if (step.action === "speak") {
+    return (
+      <Input
+        value={(a.text as string) || ""}
+        onChange={(e) => setArg("text", e.target.value)}
+        placeholder="What Jarvis should say"
+      />
     );
   }
 

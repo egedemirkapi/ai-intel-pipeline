@@ -55,6 +55,7 @@ class JarvisVoice:
         self.tts = None
         self.hotkeys = None
         self.speak_poller = None
+        self.context_poller = None
 
         # Worker thread for the slow STT→chat→TTS pipeline.
         self._work: queue.Queue = queue.Queue()
@@ -131,6 +132,16 @@ class JarvisVoice:
             )
             self.speak_poller.start()
 
+        # Context awareness — watch which app the user switches to.
+        ctx_cfg = self.cfg.get("context", {})
+        if ctx_cfg.get("enabled", True):
+            from voice.contextpoller import ContextPoller
+            self.context_poller = ContextPoller(
+                self.brain_url,
+                interval_s=ctx_cfg.get("poll_interval_s", 1.5),
+            )
+            self.context_poller.start()
+
         self._worker.start()
         self.mic.start()
         logger.info(
@@ -144,6 +155,8 @@ class JarvisVoice:
             self.hotkeys.stop()
         if self.speak_poller:
             self.speak_poller.stop()
+        if self.context_poller:
+            self.context_poller.stop()
         self._work.put(None)  # sentinel to end the worker
 
     # ─── Detector callbacks (run on the mic-dispatch thread) ────────
