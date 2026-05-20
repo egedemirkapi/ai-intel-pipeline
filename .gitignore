@@ -2,6 +2,8 @@
 .env
 .env.local
 *.key
+credentials/
+*.token.json
 
 # Data + output
 data/items.db
@@ -9,8 +11,12 @@ data/items.db-journal
 data/items.db-wal
 data/items.db-shm
 data/.started
+data/*.txt
 output/*.pdf
 output/failed/
+
+# OpenJarvis local debug/runner scripts (not part of the project)
+.oj-*
 
 # Python
 __pycache__/
