@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { load as yamlLoad, dump as yamlDump } from "js-yaml";
 import { api, WorkflowDef, WorkflowStep } from "@/lib/api";
+import { buildCron, parseCron, WEEKDAYS } from "@/lib/cron";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -12,6 +13,8 @@ import AppPicker from "@/components/AppPicker";
 
 const ACTIONS = [
   "tabs.open_set",
+  "news.open",
+  "news.email_digest",
   "apps.launch",
   "agent.run",
   "classroom.check",
@@ -32,6 +35,10 @@ function defaultArgs(action: string): Record<string, unknown> {
   switch (action) {
     case "tabs.open_set":
       return { urls: [""] };
+    case "news.open":
+      return { count: 5 };
+    case "news.email_digest":
+      return { window_hours: 48 };
     case "apps.launch":
       return { app_id: "", name: "" };
     case "agent.run":
@@ -91,6 +98,13 @@ export default function RoutineEditor({
   );
   const [phraseInput, setPhraseInput] = useState("");
   const [onApp, setOnApp] = useState(asAppString(initial?.trigger?.on_app));
+  const _sched = parseCron(initial?.trigger?.schedule ?? "");
+  const [schedFreq, setSchedFreq] = useState<string>(
+    initial?.trigger?.schedule ? _sched.freq : "none",
+  );
+  const [schedTime, setSchedTime] = useState(_sched.time);
+  const [schedDow, setSchedDow] = useState(_sched.dow);
+  const [schedRaw, setSchedRaw] = useState(initial?.trigger?.schedule ?? "");
   const [steps, setSteps] = useState<EditStep[]>(
     initial ? toEditSteps(initial.steps) : [{ action: "notify", args: defaultArgs("notify") }],
   );
@@ -99,6 +113,13 @@ export default function RoutineEditor({
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const validateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The schedule cron from the current picker state ("" = no schedule).
+  const scheduleCron = (): string => {
+    if (schedFreq === "none") return "";
+    if (schedFreq === "custom") return schedRaw.trim();
+    return buildCron(schedFreq, schedTime, schedDow);
+  };
 
   // Assemble the current builder state into a workflow definition.
   const buildDef = (): WorkflowDef => ({
@@ -109,6 +130,7 @@ export default function RoutineEditor({
       hotkey: hotkey.trim() || null,
       voice_phrases: phrases,
       on_app: onApp.trim() || null,
+      schedule: scheduleCron() || null,
     },
     steps: fromEditSteps(steps),
   });
@@ -121,6 +143,11 @@ export default function RoutineEditor({
     setHotkey(def.trigger?.hotkey ?? "");
     setPhrases(def.trigger?.voice_phrases ?? []);
     setOnApp(asAppString(def.trigger?.on_app));
+    const sp = parseCron(def.trigger?.schedule ?? "");
+    setSchedFreq(def.trigger?.schedule ? sp.freq : "none");
+    setSchedTime(sp.time);
+    setSchedDow(sp.dow);
+    setSchedRaw(def.trigger?.schedule ?? "");
     setSteps(toEditSteps(def.steps || []));
   };
 
@@ -348,6 +375,62 @@ export default function RoutineEditor({
                 </div>
               )}
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-slate-500">
+                Run automatically on a schedule
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={schedFreq}
+                  onChange={(e) => setSchedFreq(e.target.value)}
+                  className="w-44"
+                >
+                  <option value="none">No schedule</option>
+                  <option value="daily">Every day</option>
+                  <option value="weekdays">Every weekday</option>
+                  <option value="weekly">Every week</option>
+                  <option value="custom">Custom cron</option>
+                </Select>
+                {(schedFreq === "daily" ||
+                  schedFreq === "weekdays" ||
+                  schedFreq === "weekly") && (
+                  <Input
+                    type="time"
+                    value={schedTime}
+                    onChange={(e) => setSchedTime(e.target.value)}
+                    className="w-32"
+                  />
+                )}
+                {schedFreq === "weekly" && (
+                  <Select
+                    value={String(schedDow)}
+                    onChange={(e) => setSchedDow(Number(e.target.value))}
+                    className="w-32"
+                  >
+                    {WEEKDAYS.map((d, i) => (
+                      <option key={d} value={i}>
+                        {d}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                {schedFreq === "custom" && (
+                  <Input
+                    value={schedRaw}
+                    onChange={(e) => setSchedRaw(e.target.value)}
+                    placeholder="0 8 * * *"
+                    className="w-40"
+                  />
+                )}
+              </div>
+              {schedFreq !== "none" && (
+                <span className="text-[10px] text-slate-500">
+                  runs in your local time
+                  {schedFreq !== "custom" &&
+                    ` · cron: ${buildCron(schedFreq, schedTime, schedDow)}`}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* steps */}
@@ -559,6 +642,40 @@ function StepArgs({
         onChange={(e) => setArg("text", e.target.value)}
         placeholder="What Jarvis should say"
       />
+    );
+  }
+
+  if (step.action === "news.open") {
+    return (
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-slate-400">articles to open</label>
+        <Input
+          type="number"
+          value={String(a.count ?? 5)}
+          onChange={(e) => setArg("count", Number(e.target.value) || 1)}
+          className="w-24"
+        />
+      </div>
+    );
+  }
+
+  if (step.action === "news.email_digest") {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-400">news window (hours)</label>
+          <Input
+            type="number"
+            value={String(a.window_hours ?? 48)}
+            onChange={(e) => setArg("window_hours", Number(e.target.value) || 24)}
+            className="w-24"
+          />
+        </div>
+        <p className="text-[11px] text-slate-500">
+          Summarizes recent tech news into a PDF and emails it. Leave the
+          window at 48 for today + yesterday.
+        </p>
+      </div>
     );
   }
 

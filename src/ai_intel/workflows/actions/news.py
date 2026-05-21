@@ -9,6 +9,7 @@ up two ways, so the user controls it:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from ai_intel.workflows.actions.tabs import action_tabs_open_set
 
@@ -45,3 +46,49 @@ async def action_news_open(engine, *, count: int = 5, hours: int = 48) -> dict:
         "articles": articles,
         "summary": f"opened {opened} news article{'' if opened == 1 else 's'}",
     }
+
+
+async def action_news_email_digest(
+    engine, *, window_hours: int = 48, email_to=None,
+) -> dict:
+    """Summarize recent tech news into a PDF and email it.
+
+    Wraps the digest pipeline (`generate_and_send_digest`): gather the
+    news in the window, summarize it with the analyst model, render a
+    PDF, and email it via Resend with the PDF attached. This is the
+    action that powers scheduled automations like a daily news digest.
+
+    Args:
+        window_hours: how far back the news window reaches — default 48
+            (today + yesterday).
+        email_to: recipient(s); defaults to ``delivery.email_to`` in
+            config/config.yaml.
+    """
+    # Lazy imports — these pull in the analyst, Playwright PDF, and the
+    # mailer; keep them out of the module-level import cost.
+    from ai_intel.pipeline import generate_and_send_digest
+    from ai_intel.scheduler import load_config
+
+    cfg = load_config()
+    model = cfg["llm"]["analyst_model"]
+    if not email_to:
+        email_to = cfg["delivery"]["email_to"]
+
+    # only_unsent=False / mark_sent=False: a recurring digest summarizes the
+    # whole window every run and must not consume items from other digests.
+    result = dict(await generate_and_send_digest(
+        engine,
+        output_dir=Path("output"),
+        window_hours=int(window_hours),
+        model=model,
+        email_to=email_to,
+        only_unsent=False,
+        mark_sent=False,
+    ))
+    if result.get("sent"):
+        result["summary"] = f"emailed the news digest PDF to {email_to}"
+        logger.info("news.email_digest: sent to %s", email_to)
+    else:
+        result["summary"] = f"news digest not sent ({result.get('reason', 'unknown')})"
+        logger.warning("news.email_digest: not sent — %s", result.get("reason"))
+    return result

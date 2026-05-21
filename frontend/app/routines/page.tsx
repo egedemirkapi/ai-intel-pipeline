@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, WorkflowDef, WorkflowSummary } from "@/lib/api";
+import { cronLabel } from "@/lib/cron";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import RoutineEditor from "@/components/RoutineEditor";
@@ -16,10 +17,12 @@ type EditTarget = {
 function triggerBadges(w: WorkflowSummary): string[] {
   const t = w.trigger || {};
   const out: string[] = [];
+  if (t.schedule) out.push(`⏰ ${cronLabel(t.schedule)}`);
   if (t.button) out.push("button");
   if (t.clap) out.push("clap");
   if (t.hotkey) out.push(`⌨ ${t.hotkey}`);
   if (t.voice_phrases && t.voice_phrases.length) out.push("voice");
+  if (t.on_app) out.push("on-app");
   return out;
 }
 
@@ -136,6 +139,11 @@ export default function RoutinesPage() {
                   {w.is_builtin && (
                     <span className="text-[9px] uppercase tracking-wide text-slate-500 border border-edge rounded px-1">
                       {w.is_overridden ? "builtin · edited" : "builtin"}
+                    </span>
+                  )}
+                  {w.name === "clap_default" && (
+                    <span className="text-[9px] uppercase tracking-wide text-glow border border-glow/40 rounded px-1">
+                      wake-up · edit the tabs here
                     </span>
                   )}
                 </div>

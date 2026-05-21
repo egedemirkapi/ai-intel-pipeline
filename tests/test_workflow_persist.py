@@ -8,6 +8,8 @@ Covers:
 """
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 import yaml
 
@@ -188,3 +190,47 @@ def test_match_voice_prefers_longest_phrase(tmp_path):
     # transcript contains both "study setup" (clap_default) and the longer phrase
     got = match_voice("please open my study setup dashboard now", path=p)
     assert got == "specific"
+
+
+# ─── schedule trigger ───────────────────────────────────────────────
+
+
+def test_validate_accepts_valid_cron_schedule():
+    assert validate_def(_valid_def(trigger={"schedule": "0 8 * * *"})) == []
+
+
+def test_validate_rejects_bad_cron_schedule():
+    errors = validate_def(_valid_def(trigger={"schedule": "every day at 8"}))
+    assert any("schedule" in e for e in errors)
+
+
+def test_validate_rejects_non_string_schedule():
+    errors = validate_def(_valid_def(trigger={"schedule": 800}))
+    assert any("schedule" in e for e in errors)
+
+
+def test_workflows_with_schedule_lists_scheduled(tmp_path):
+    from ai_intel.workflows.triggers import workflows_with_schedule
+
+    p = tmp_path / "workflows.yaml"
+    create_workflow(
+        "daily_digest",
+        _valid_def(trigger={"schedule": "0 8 * * *"}),
+        path=p,
+    )
+    found = dict(workflows_with_schedule(path=p))
+    assert found.get("daily_digest") == "0 8 * * *"
+
+
+# ─── workflow.create chat tool ──────────────────────────────────────
+
+
+def test_workflow_create_tool_rejects_bad_definition():
+    """The workflow.create chat tool returns an error (does not raise, does
+    not write) for an invalid definition."""
+    from ai_intel.brain.tools import _h_workflow_create
+
+    result = asyncio.run(
+        _h_workflow_create(None, name="bad", definition={"steps": []})
+    )
+    assert "error" in result and "created" not in result

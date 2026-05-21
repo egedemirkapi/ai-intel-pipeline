@@ -261,6 +261,47 @@ async def _h_workflow_list(engine) -> dict[str, Any]:
     return {"workflows": list_workflows()}
 
 
+async def _h_workflow_create(engine, *, name: str, definition: dict) -> dict[str, Any]:
+    """Create a saved automation workflow from a structured definition."""
+    from ai_intel.workflows.persist import (
+        WorkflowError,
+        create_workflow,
+        validate_def,
+    )
+
+    if not isinstance(definition, dict):
+        return {"error": "definition must be an object with description / trigger / steps"}
+    errors = validate_def(definition)
+    if errors:
+        return {"error": "invalid workflow definition: " + "; ".join(errors)}
+    try:
+        created = create_workflow(name, definition)
+    except WorkflowError as exc:
+        return {"error": str(exc)}
+    sched = (definition.get("trigger") or {}).get("schedule")
+    note = (
+        f"It runs automatically on cron schedule {sched!r} (local time)."
+        if sched
+        else "It has no schedule — give it a `schedule` trigger or run it manually."
+    )
+    return {
+        "created": name,
+        "definition": created,
+        "summary": f"Automation {name!r} created. {note}",
+    }
+
+
+async def _h_workflow_delete(engine, *, name: str) -> dict[str, Any]:
+    """Delete a saved workflow / automation by name."""
+    from ai_intel.workflows.persist import WorkflowError, delete_workflow
+
+    try:
+        delete_workflow(name)
+    except WorkflowError as exc:
+        return {"error": str(exc)}
+    return {"deleted": name, "summary": f"Workflow {name!r} deleted."}
+
+
 async def _h_classroom_read(engine, *, days_ahead: int = 7) -> dict[str, Any]:
     """On-demand fresh fetch of Google Classroom coursework + announcements.
 
@@ -731,6 +772,82 @@ def build_registry() -> dict[str, Tool]:
             description="List the available automation workflows by name.",
             input_schema={"type": "object", "properties": {}},
             handler=_h_workflow_list,
+        ),
+        "workflow.create": Tool(
+            name="workflow.create",
+            description=(
+                "Create a saved AUTOMATION (a workflow / routine). Use this "
+                "whenever the user describes something they want done "
+                "automatically or on a schedule — 'every day...', 'each "
+                "morning...', 'automatically...', 'when I open...'.\n"
+                "`definition` has: description (str), trigger (object), "
+                "steps (list).\n"
+                "TRIGGER keys, all optional: `schedule` — a 5-field cron "
+                "string, runs in LOCAL time (translate plain language: "
+                "'every day at 8am' = '0 8 * * *', 'weekdays at 9' = "
+                "'0 9 * * 1-5', 'every Monday 7pm' = '0 19 * * 1'); "
+                "`button` true = a dashboard button; `clap` true; `hotkey` "
+                "e.g. 'ctrl+alt+s'; `voice_phrases` list of spoken "
+                "triggers; `on_app` app name(s) — fires when that app is "
+                "focused.\n"
+                "STEPS is a list of single-key objects {action: {args}}, "
+                "run in order. Actions and their args:\n"
+                "  news.email_digest {window_hours, email_to} — summarize "
+                "recent tech news into a PDF and email it (the daily news "
+                "digest);\n"
+                "  news.open {count} — open the top news article tabs;\n"
+                "  tabs.open_set {urls:[...]} — open web pages;\n"
+                "  apps.launch {name} — launch a Windows app;\n"
+                "  agent.run {agent_id} — run a backend agent; agent_id "
+                "'weekly_ideation' runs the startup idea-finder;\n"
+                "  brief.compose {} — assemble the briefing;\n"
+                "  classroom.check / calendar.check / email.check {} — "
+                "Google reads; speak {text}; notify {title, message}.\n"
+                "Example — 'every day at 8am email me a PDF of the day's "
+                "tech news': name='daily_news_digest', definition="
+                "{'description':'Daily tech-news digest', 'trigger':"
+                "{'schedule':'0 8 * * *'}, 'steps':[{'news.email_digest':"
+                "{'window_hours':48}}]}."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "short id — letters, digits, '-' or '_' (e.g. 'daily_news_digest')",
+                    },
+                    "definition": {
+                        "type": "object",
+                        "description": "the workflow: description, trigger, steps",
+                        "properties": {
+                            "description": {"type": "string"},
+                            "trigger": {"type": "object"},
+                            "steps": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                                "description": "ordered list of {action: {args}} single-key objects",
+                            },
+                        },
+                        "required": ["steps"],
+                    },
+                },
+                "required": ["name", "definition"],
+            },
+            handler=_h_workflow_create,
+        ),
+        "workflow.delete": Tool(
+            name="workflow.delete",
+            description=(
+                "Delete a saved automation / workflow by name. Use when the "
+                "user says 'delete the X automation', 'stop doing X', or "
+                "'remove that routine'. Built-in workflows cannot be deleted."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+            handler=_h_workflow_delete,
         ),
     }
 

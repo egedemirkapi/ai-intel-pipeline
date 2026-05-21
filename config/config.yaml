@@ -1,7 +1,9 @@
 delivery:
+  # Resend's test sender (onboarding@resend.dev) only delivers to the
+  # account owner's own address. To also email artunbatu@gmail.com,
+  # verify a domain at resend.com/domains and set a custom `from`.
   email_to:
     - egedemirkapi@gmail.com
-    - artunbatu@gmail.com
   digest_window_hours: 2
   schedule_cron: "0 */2 * * *"
 

@@ -15,7 +15,7 @@ from ai_intel.workflows.actions.brief import action_brief_compose
 from ai_intel.workflows.actions.calendar import action_calendar_check
 from ai_intel.workflows.actions.classroom import action_classroom_check
 from ai_intel.workflows.actions.gmail import action_email_check
-from ai_intel.workflows.actions.news import action_news_open
+from ai_intel.workflows.actions.news import action_news_email_digest, action_news_open
 from ai_intel.workflows.actions.notify import action_notify
 from ai_intel.workflows.actions.speak import action_speak
 from ai_intel.workflows.actions.tabs import action_tabs_open_set
@@ -25,6 +25,7 @@ from ai_intel.workflows.actions.tabs import action_tabs_open_set
 ACTION_REGISTRY = {
     "tabs.open_set":     action_tabs_open_set,
     "news.open":         action_news_open,
+    "news.email_digest": action_news_email_digest,
     "apps.launch":       action_apps_launch,
     "agent.run":         action_agent_run,
     "classroom.check":   action_classroom_check,

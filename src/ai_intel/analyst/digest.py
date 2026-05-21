@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import anthropic
-from sqlmodel import Session, select
+from sqlmodel import Session, desc, select
 
 from ai_intel.db.models import Item
 from ai_intel.enrichment.enrich import _strip_markdown_fences
@@ -14,6 +14,12 @@ from ai_intel.llm import get_anthropic_client
 logger = logging.getLogger(__name__)
 
 PROMPT_PATH = Path("prompts/analyst.txt")
+
+# Max items fed to the analyst model in one call. A wide window can hold
+# 1000+ items, which blows past the model's 200k-token context limit —
+# cap the candidate pool to the most AI-relevant; the analyst re-ranks
+# down to top_n from there.
+_CANDIDATE_CAP = 150
 
 
 def _load_prompt() -> str:
@@ -27,16 +33,21 @@ async def generate_digest(
     model: str,
     top_n: int = 50,
     ai_relevance_threshold: float = 0.3,
+    only_unsent: bool = True,
 ) -> dict:
-    # Step 1: Pull eligible items
+    # Step 1: Pull eligible items. ``only_unsent`` is the queue-drain
+    # behaviour the 2-hourly digest wants; a recurring daily news digest
+    # passes False to summarize the whole window every time.
     with Session(engine) as s:
         stmt = (
             select(Item)
             .where(Item.published_at >= window_start)
             .where(Item.published_at <= window_end)
             .where(Item.ai_relevance >= ai_relevance_threshold)
-            .where(Item.sent_in_digest_at.is_(None))
         )
+        if only_unsent:
+            stmt = stmt.where(Item.sent_in_digest_at.is_(None))
+        stmt = stmt.order_by(desc(Item.ai_relevance)).limit(_CANDIDATE_CAP)
         items = s.exec(stmt).all()
 
     if not items:

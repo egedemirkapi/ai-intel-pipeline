@@ -84,12 +84,16 @@ async def generate_and_send_digest(
     window_hours: int,
     model: str,
     email_to: str | list[str],
+    *,
+    only_unsent: bool = True,
+    mark_sent: bool = True,
 ) -> dict:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(hours=window_hours)
 
     digest = await generate_digest(
         engine, window_start=window_start, window_end=now, model=model,
+        only_unsent=only_unsent,
     )
     if not digest["top_items"]:
         logger.info("No items to digest this cycle.")
@@ -130,13 +134,16 @@ async def generate_and_send_digest(
         return {"sent": False, "reason": "email_failed", "error": str(e), "pdf_path": str(pdf_path)}
 
     # Mark items as sent + record the digest
-    # Intentionally placed AFTER email send — if email fails, we don't claim items were sent
+    # Intentionally placed AFTER email send — if email fails, we don't claim items were sent.
+    # A recurring news digest passes mark_sent=False — it is a snapshot of the
+    # window, not a queue drain, so it must not consume items.
     with Session(engine) as s:
-        for entry in digest["top_items"]:
-            item = s.get(Item, entry["item_id"])
-            if item:
-                item.sent_in_digest_at = now
-                s.add(item)
+        if mark_sent:
+            for entry in digest["top_items"]:
+                item = s.get(Item, entry["item_id"])
+                if item:
+                    item.sent_in_digest_at = now
+                    s.add(item)
         s.add(Digest(
             window_start=window_start, window_end=now,
             items_considered=digest["items_considered"],

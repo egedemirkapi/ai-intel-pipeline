@@ -220,3 +220,38 @@ def test_action_news_open_handles_empty_vault(engine, monkeypatch):
     result = asyncio.run(news_mod.action_news_open(engine))
     assert result["opened"] == 0
     assert result["articles"] == []
+
+
+def test_action_news_email_digest_wraps_the_pipeline(engine, monkeypatch):
+    """news.email_digest summarizes news -> PDF -> email by delegating to
+    the digest pipeline; the pipeline call is stubbed here."""
+    import ai_intel.workflows.actions.news as news_mod
+
+    captured: dict = {}
+
+    async def fake_digest(
+        _eng, *, output_dir, window_hours, model, email_to,
+        only_unsent=True, mark_sent=True,
+    ):
+        captured.update(
+            window_hours=window_hours, email_to=email_to,
+            only_unsent=only_unsent, mark_sent=mark_sent,
+        )
+        return {"sent": True, "msg_id": "msg_test", "pdf_path": "out.pdf"}
+
+    monkeypatch.setattr("ai_intel.pipeline.generate_and_send_digest", fake_digest)
+    monkeypatch.setattr(
+        "ai_intel.scheduler.load_config",
+        lambda: {
+            "llm": {"analyst_model": "claude-haiku-4-5"},
+            "delivery": {"email_to": ["me@example.test"]},
+        },
+    )
+    result = asyncio.run(news_mod.action_news_email_digest(engine, window_hours=48))
+    assert result["sent"] is True
+    assert captured["window_hours"] == 48
+    assert captured["email_to"] == ["me@example.test"]
+    # A recurring digest summarizes the whole window and never consumes items.
+    assert captured["only_unsent"] is False
+    assert captured["mark_sent"] is False
+    assert "emailed" in result["summary"]

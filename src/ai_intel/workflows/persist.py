@@ -14,6 +14,7 @@ A workflow definition::
       clap: false                  # fire on a two-clap gesture
       hotkey: "ctrl+alt+s"          # global hotkey, or null
       voice_phrases: ["study setup"]
+      schedule: "0 8 * * *"         # cron — run automatically (local time)
     steps:
       - <action.name>: { <arg>: <value> }
 """
@@ -33,7 +34,9 @@ from ai_intel.workflows.engine import (
 )
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
-_VALID_TRIGGER_KEYS = {"button", "clap", "hotkey", "voice_phrases", "on_app"}
+_VALID_TRIGGER_KEYS = {
+    "button", "clap", "hotkey", "voice_phrases", "on_app", "schedule",
+}
 
 
 class WorkflowError(ValueError):
@@ -146,6 +149,23 @@ def _validate_trigger(trigger: Any) -> list[str]:
         )
         if not ok:
             errors.append("trigger.on_app must be an app name string or a list of strings")
+    schedule = trigger.get("schedule")
+    if schedule is not None:
+        if not isinstance(schedule, str) or not schedule.strip():
+            errors.append(
+                "trigger.schedule must be a 5-field cron string like '0 8 * * *'"
+            )
+        else:
+            # Reuse APScheduler's own crontab parser as the validator.
+            try:
+                from apscheduler.triggers.cron import CronTrigger
+
+                CronTrigger.from_crontab(schedule.strip())
+            except Exception:
+                errors.append(
+                    f"trigger.schedule {schedule!r} is not a valid cron expression "
+                    "(5 fields: minute hour day month weekday — e.g. '0 8 * * *')"
+                )
     return errors
 
 

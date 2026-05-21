@@ -109,6 +109,7 @@ export interface WorkflowTrigger {
   hotkey?: string | null;
   voice_phrases?: string[];
   on_app?: string | string[] | null;
+  schedule?: string | null; // 5-field cron — runs automatically
 }
 // A step is a single-key map {action: args}.
 export type WorkflowStep = Record<string, Record<string, unknown>>;

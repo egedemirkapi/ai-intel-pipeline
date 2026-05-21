@@ -117,4 +117,56 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
             hour=brief_cfg.get("hour", 6), minute=brief_cfg.get("minute", 0),
             id="briefing", misfire_grace_time=600,
         )
+
+    # ── User-defined scheduled workflows ─────────────────────────────
+    # A workflow with a `schedule` trigger (a cron string) runs on its
+    # own cron. The set changes at runtime — the user creates one via
+    # chat or the dashboard — so this sync job re-scans every 2 minutes
+    # and adds / removes cron jobs to match. No daemon restart needed.
+    try:
+        from tzlocal import get_localzone
+        local_tz = get_localzone()  # schedules run in the user's local time
+    except Exception:
+        local_tz = None  # APScheduler falls back to its configured tz
+
+    def sync_scheduled_workflows():
+        from apscheduler.triggers.cron import CronTrigger
+
+        from ai_intel.workflows import run_workflow
+        from ai_intel.workflows.triggers import workflows_with_schedule
+
+        prefix = "wf-sched-"
+        desired = dict(workflows_with_schedule())
+        registered = {
+            job.id[len(prefix):] for job in sched.get_jobs()
+            if job.id.startswith(prefix)
+        }
+        for name in registered - set(desired):
+            sched.remove_job(prefix + name)
+            logger.info("Unscheduled workflow %r (schedule removed)", name)
+        for name, cron in desired.items():
+            try:
+                trigger = (
+                    CronTrigger.from_crontab(cron, timezone=local_tz)
+                    if local_tz else CronTrigger.from_crontab(cron)
+                )
+            except Exception as exc:
+                logger.warning("Workflow %r has an invalid cron %r: %s", name, cron, exc)
+                continue
+
+            async def _fire(_name=name):
+                result = await run_workflow(engine, _name)
+                logger.info("Scheduled workflow %r ran: ok=%s", _name, result.get("ok"))
+
+            sched.add_job(
+                _fire, trigger, id=prefix + name,
+                replace_existing=True, misfire_grace_time=900,
+            )
+            if name not in registered:
+                logger.info("Scheduled workflow %r registered (cron %r)", name, cron)
+
+    sched.add_job(
+        sync_scheduled_workflows, "interval", minutes=2, id="sync-workflows",
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=5),
+    )
     return sched

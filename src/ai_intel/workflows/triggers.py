@@ -47,6 +47,19 @@ def hotkey_map(path: Path | None = None) -> dict[str, str]:
     return out
 
 
+def workflows_with_schedule(path: Path | None = None) -> list[tuple[str, str]]:
+    """Return ``[(workflow_name, cron_string), ...]`` for every workflow
+    whose ``trigger.schedule`` is set. The always-on daemon reads this to
+    register a cron job per scheduled workflow.
+    """
+    out: list[tuple[str, str]] = []
+    for name, wf in load_workflows(path).items():
+        cron = (wf.get("trigger") or {}).get("schedule")
+        if isinstance(cron, str) and cron.strip():
+            out.append((name, cron.strip()))
+    return out
+
+
 def _normalize(text: str) -> str:
     """Lowercase, keep only words, collapse whitespace."""
     return " ".join(_WORD_RE.findall((text or "").lower()))

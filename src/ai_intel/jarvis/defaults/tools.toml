@@ -46,6 +46,8 @@
 "workflow.run"             = "allow"   # YAML workflows are user-defined
 "workflow.list"            = "allow"   # read-only: list workflow names
 "workflow.edit"            = "allow"   # dashboard routine editor: create/update/delete
+"workflow.create"          = "allow"   # chat tool: build an automation from a request
+"workflow.delete"          = "allow"   # chat tool: remove an automation
 "tabs.open_set"            = "allow"   # opens predefined Chrome tabs
 "apps.launch"              = "allow"   # gated per-app by ~/.jarvis/apps_allowed.json,
                                        #   not here — see workflows/actions/apps.py
@@ -65,6 +67,7 @@
 "apps.open"                = "allow"   # chat tool: launch a Windows app by name
 "web.open"                 = "allow"   # chat tool: open a URL / website
 "news.open"                = "allow"   # chat tool / routine step: open the top news articles
+"news.email_digest"        = "allow"   # routine step: summarize news -> PDF -> email
 
 # ── Google Workspace — Classroom read added ──────────────────────────
 "gworkspace.read_classroom" = "allow"
