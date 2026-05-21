@@ -8,8 +8,10 @@ It runs three checks and prints exactly what it finds — no guessing:
 
   [1] MIC     — is the microphone actually capturing audio?
   [2] SPEAKER — Jarvis says a test line; you confirm you heard it.
-  [3] CLAP    — you clap a few times; it measures how loud your claps
-                really are and writes the right threshold into config.
+  [3] CLAP    — you clap a few times, then talk for a few seconds. It
+                measures how a clap differs in SHAPE from your speech
+                and writes the right thresholds into config, so talking
+                never false-fires the clap detector.
 
 Paste the WHOLE output back. Whatever is broken will be visible in it.
 """
@@ -140,30 +142,22 @@ def check_speaker(cfg: dict) -> bool:
     return True
 
 
-# ─── [3] clap calibration ────────────────────────────────────────────
+# ─── [3] clap-vs-speech calibration ──────────────────────────────────
 
 
-def check_clap(cfg: dict, ac: dict) -> None:
-    print("\n[3/3] CLAP — listening 18s. CLAP FIRMLY 6-8 times, ~1s apart.\n")
+def _record(ac: dict, seconds: float, label: str) -> list[tuple[float, float]]:
+    """Run the mic for ``seconds``; return (rms, peak) for every frame."""
     from voice.audio import MicStream
 
-    floor = 0.05
-    st = {"above": False, "peak": 0.0}
-    transients: list[float] = []
+    frames: list[tuple[float, float]] = []
 
     def on_frame(frame: np.ndarray) -> None:
-        rms = float(np.sqrt(np.mean(np.square(frame)))) if frame.size else 0.0
-        print(f"\r  level {rms:6.3f} [{_bar(rms)}]", end="", flush=True)
-        if rms >= floor and not st["above"]:
-            st["above"] = True
-            st["peak"] = rms
-        elif st["above"]:
-            st["peak"] = max(st["peak"], rms)
-            if rms < floor * 0.6:
-                st["above"] = False
-                transients.append(st["peak"])
-                print(f"\r  >> sound detected — peak rms = {st['peak']:.3f}"
-                      + " " * 24)
+        if not frame.size:
+            return
+        rms = float(np.sqrt(np.mean(np.square(frame))))
+        peak = float(np.max(np.abs(frame)))
+        frames.append((rms, peak))
+        print(f"\r  {label} level {rms:6.3f} [{_bar(rms)}]", end="", flush=True)
 
     try:
         mic = MicStream(
@@ -172,44 +166,89 @@ def check_clap(cfg: dict, ac: dict) -> None:
         )
         mic.add_listener(on_frame)
         mic.start()
-        time.sleep(18)
+        time.sleep(seconds)
         mic.stop()
     except Exception as exc:
-        print(f"\n  RESULT: ** mic failed ** — {exc}")
-        return
-
+        print(f"\n  ** mic failed: {exc} **")
     print()
-    if not transients:
-        print("  RESULT: ** heard NO loud sounds ** — your claps are not")
-        print("        reaching the mic (or [1/3] already showed the mic is off).")
+    return frames
+
+
+def _transients(frames: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Pick short, loud impulses out of a recording. Returns the
+    (peak, crest-factor) of each — that is what a clap looks like."""
+    floor = 0.10
+    out: list[tuple[float, float]] = []
+    above = False
+    max_peak = max_crest = 0.0
+    for rms, peak in frames:
+        crest = peak / rms if rms > 1e-6 else 0.0
+        if peak >= floor:
+            if not above:
+                above, max_peak, max_crest = True, peak, crest
+            else:
+                max_peak, max_crest = max(max_peak, peak), max(max_crest, crest)
+        elif above:
+            above = False
+            out.append((max_peak, max_crest))
+    if above:
+        out.append((max_peak, max_crest))
+    return out
+
+
+def check_clap(cfg: dict, ac: dict) -> None:
+    print("\n[3/3] CLAP vs SPEECH — calibrating how a clap differs from talking.")
+
+    print("\n  Part A — CLAP FIRMLY 6-8 times, about 1 second apart. (16s)\n")
+    claps = _transients(_record(ac, 16, "clap"))
+
+    print("\n  Part B — now TALK normally for 8 seconds (say anything). (8s)\n")
+    speech_frames = _record(ac, 8, "talk")
+
+    if not claps:
+        print("\n  RESULT: ** heard NO claps ** — they aren't reaching the mic")
+        print("        (or [1/3] already showed the mic is off).")
         return
 
-    transients.sort(reverse=True)
-    claps = transients[:12]
-    med = statistics.median(claps)
-    rec = max(0.10, min(0.40, round(med * 0.6, 2)))
-    cur = cfg.get("clap", {}).get("rms_threshold")
-    print(f"  loudest sounds (rms): {', '.join(f'{t:.3f}' for t in claps)}")
-    print(f"  median clap level: {med:.3f}")
-    print(f"  current threshold in config: {cur}")
-    if isinstance(cur, (int, float)) and cur > med:
-        print(f"  ** FOUND IT — your claps (~{med:.2f}) are BELOW the threshold")
-        print(f"     ({cur}); they never register. THIS is why nothing happens. **")
-    print(f"  recommended clap.rms_threshold: {rec}")
-    _write_threshold(rec)
+    clap_peaks = sorted((p for p, _ in claps), reverse=True)[:10]
+    clap_crests = sorted((c for _, c in claps), reverse=True)[:10]
+    clap_peak = statistics.median(clap_peaks)
+    clap_crest = statistics.median(clap_crests)
+
+    # The spikiest speech frame is the bar crest_min must clear so that
+    # talking never registers as a clap.
+    speech_crests = [p / r for r, p in speech_frames if r >= 0.02 and p > 0]
+    speech_crest = max(speech_crests) if speech_crests else 0.0
+
+    print(f"\n  your claps : peak ~{clap_peak:.2f}   crest factor ~{clap_crest:.1f}")
+    print(f"  your speech: spikiest crest factor ~{speech_crest:.1f}")
+
+    peak_min = round(max(0.10, min(0.60, clap_peak * 0.55)), 2)
+    if clap_crest > speech_crest + 1.5:
+        crest_min = round((clap_crest + speech_crest) / 2, 1)
+        print("\n  Good separation — a clap is clearly spikier than your speech,")
+        print("  so talking will not false-trigger it.")
+    else:
+        crest_min = round(speech_crest + 1.5, 1)
+        print("\n  ** Tight separation ** — your claps are not much spikier than")
+        print("     your speech. Clap closer to the mic / more firmly and re-run.")
+        print("     Setting the threshold just above your speech for now.")
+    print(f"\n  recommended  clap.peak_min  = {peak_min}")
+    print(f"  recommended  clap.crest_min = {crest_min}")
+    _write_clap_calibration(peak_min, crest_min)
 
 
-def _write_threshold(rec: float) -> None:
+def _write_clap_calibration(peak_min: float, crest_min: float) -> None:
     try:
         text = CONFIG.read_text(encoding="utf-8")
-        new = re.sub(
-            r"(\brms_threshold:\s*)[\d.]+", rf"\g<1>{rec}", text, count=1,
-        )
+        new = re.sub(r"(\bpeak_min:\s*)[\d.]+", rf"\g<1>{peak_min}", text, count=1)
+        new = re.sub(r"(\bcrest_min:\s*)[\d.]+", rf"\g<1>{crest_min}", new, count=1)
         if new == text:
-            print("  (could not find rms_threshold line — set it manually)")
+            print("  (could not find peak_min/crest_min lines — set them manually)")
             return
         CONFIG.write_text(new, encoding="utf-8")
-        print(f"  -> wrote clap.rms_threshold = {rec} into voice/config.yaml")
+        print(f"  -> wrote clap.peak_min = {peak_min}, "
+              f"clap.crest_min = {crest_min} into voice/config.yaml")
         print("  -> RESTART the voice tray for it to take effect.")
     except Exception as exc:
         print(f"  (could not write config: {exc})")

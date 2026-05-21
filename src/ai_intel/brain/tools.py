@@ -411,6 +411,15 @@ async def _h_apps_open(engine, *, name: str) -> dict[str, Any]:
     return await action_apps_launch(engine, name=name)
 
 
+async def _h_news_open(engine, *, count: int = 5) -> dict[str, Any]:
+    """Open the freshest tech-news ARTICLES in the browser — the actual
+    article pages, not just a list. Reuses the workflow action so a chat
+    command and a routine step behave identically."""
+    from ai_intel.workflows.actions.news import action_news_open
+
+    return await action_news_open(engine, count=count)
+
+
 async def _h_web_open(engine, *, url: str = "", urls: list | None = None) -> dict[str, Any]:
     """Open one or more URLs / sites in the browser."""
     from ai_intel.workflows.actions.tabs import action_tabs_open_set
@@ -680,6 +689,26 @@ def build_registry() -> dict[str, Tool]:
                 },
             },
             handler=_h_web_open,
+        ),
+        "news.open": Tool(
+            name="news.open",
+            description=(
+                "Open the freshest AI / tech-news ARTICLES in the browser "
+                "as tabs — the actual article pages, not a list. Use when "
+                "the user says 'open the top news', 'open today's AI news', "
+                "'pull up the tech news', 'open the news you suggested', or "
+                "'show me the news'. count defaults to 5."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer", "default": 5, "minimum": 1, "maximum": 10,
+                        "description": "How many articles to open",
+                    },
+                },
+            },
+            handler=_h_news_open,
         ),
         "workflow.run": Tool(
             name="workflow.run",

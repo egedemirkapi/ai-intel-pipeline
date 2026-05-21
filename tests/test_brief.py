@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
@@ -38,16 +38,20 @@ def _no_google(monkeypatch):
     monkeypatch.setattr("ai_intel.google_auth.has_token", lambda: False)
 
 
-def _make_item(title: str, *, source: str = "hn", ai_relevance: float = 0.5) -> Item:
+def _make_item(
+    title: str, *, source: str = "hn", ai_relevance: float = 0.5,
+    collected_at: datetime | None = None,
+) -> Item:
     url = f"https://example.test/{hashlib.md5(title.encode()).hexdigest()[:10]}"
+    when = collected_at or datetime.now(timezone.utc)
     return Item(
         source=source,
         url=url,
         url_hash=hashlib.sha256(url.encode()).hexdigest()[:32],
         title=title,
         body="",
-        published_at=datetime.now(timezone.utc),
-        collected_at=datetime.now(timezone.utc),
+        published_at=when,
+        collected_at=when,
         ai_relevance=ai_relevance,
     )
 
@@ -77,14 +81,21 @@ def test_delete_interest_ignores_plain_notes(engine, embedder):
 # ─── _top_news ──────────────────────────────────────────────────────
 
 
-def test_top_news_ranks_by_relevance(engine):
+def test_top_news_ranks_by_recency(engine):
+    """The brief leads with the FRESHEST news (newest collected first) so
+    the collector's work is visible — not the highest-relevance item,
+    which stayed frozen on top for days under the old ranking."""
+    base = datetime.now(timezone.utc)
     with Session(engine) as s:
-        s.add(_make_item("low one", ai_relevance=0.2))
-        s.add(_make_item("high one", ai_relevance=0.95))
-        s.add(_make_item("mid one", ai_relevance=0.6))
+        s.add(_make_item("oldest", ai_relevance=0.95,
+                         collected_at=base - timedelta(hours=3)))
+        s.add(_make_item("newest", ai_relevance=0.20,
+                         collected_at=base - timedelta(minutes=5)))
+        s.add(_make_item("middle", ai_relevance=0.60,
+                         collected_at=base - timedelta(hours=1)))
         s.commit()
     news = _top_news(engine, hours=48, limit=5)
-    assert [n["title"] for n in news] == ["high one", "mid one", "low one"]
+    assert [n["title"] for n in news] == ["newest", "middle", "oldest"]
 
 
 def test_top_news_excludes_corpus_sources(engine):
@@ -102,8 +113,20 @@ def test_build_brief_empty_db(engine):
     brief = asyncio.run(build_brief(engine))
     assert brief["news"] == []
     assert brief["suggestions"] == []
+    assert brief["fresh"] == {"last_hour": 0, "today": 0}
     assert "not connected" in brief["calendar"]["summary"]
     assert isinstance(brief["spoken"], str) and brief["spoken"]
+
+
+def test_build_brief_suggestions_fallback_without_interests(engine):
+    """With no interests set, the 'For you' section still fills — from
+    recent high-relevance intel — so it is never blank."""
+    with Session(engine) as s:
+        s.add(_make_item("A notable AI launch", ai_relevance=0.9))
+        s.add(_make_item("Another AI story", ai_relevance=0.7))
+        s.commit()
+    brief = asyncio.run(build_brief(engine))
+    assert len(brief["suggestions"]) >= 1
 
 
 def test_build_brief_includes_news(engine):
@@ -133,7 +156,8 @@ def test_build_brief_suggestions_from_interests(engine, embedder):
 
 def test_compose_spoken_quiet_day():
     spoken = _compose_spoken(
-        [], {"summary": "", "events": []}, {"summary": "", "assignments": []}, [],
+        [], {"summary": "", "events": []}, {"summary": "", "assignments": []},
+        [], {},
     )
     assert "quiet" in spoken.lower()
 
@@ -141,6 +165,58 @@ def test_compose_spoken_quiet_day():
 def test_compose_spoken_mentions_top_story():
     news = [{"title": "Big AI news today"}]
     spoken = _compose_spoken(
-        news, {"summary": "", "events": []}, {"summary": "", "assignments": []}, [],
+        news, {"summary": "", "events": []}, {"summary": "", "assignments": []},
+        [], {},
     )
     assert "Big AI news today" in spoken
+
+
+def test_compose_spoken_mentions_collector_activity():
+    """The brief tells the user the collector is alive — the numbers move
+    every cycle, which is how the 24/7 collector becomes visible."""
+    spoken = _compose_spoken(
+        [], {"summary": "", "events": []}, {"summary": "", "assignments": []},
+        [], {"last_hour": 12, "today": 80},
+    )
+    assert "12" in spoken and "collector" in spoken.lower()
+
+
+# ─── news.open action ───────────────────────────────────────────────
+
+
+def test_action_news_open_opens_freshest_articles(engine, monkeypatch):
+    """news.open opens the freshest tech-news article URLs (newest first),
+    so 'open the top news' opens the actual pages — not just a list."""
+    import ai_intel.workflows.actions.news as news_mod
+
+    captured: dict = {}
+
+    async def fake_open(_engine, *, urls=None):
+        captured["urls"] = list(urls or [])
+        return {"opened": len(urls or [])}
+
+    monkeypatch.setattr(news_mod, "action_tabs_open_set", fake_open)
+    base = datetime.now(timezone.utc)
+    with Session(engine) as s:
+        s.add(_make_item("stale story", ai_relevance=0.95,
+                         collected_at=base - timedelta(hours=6)))
+        s.add(_make_item("breaking story", ai_relevance=0.30,
+                         collected_at=base - timedelta(minutes=2)))
+        s.commit()
+    result = asyncio.run(news_mod.action_news_open(engine, count=2))
+    assert result["opened"] == 2
+    assert result["articles"][0]["title"] == "breaking story"  # freshest first
+    assert len(captured["urls"]) == 2
+
+
+def test_action_news_open_handles_empty_vault(engine, monkeypatch):
+    """With nothing collected, news.open reports it cleanly — no crash."""
+    import ai_intel.workflows.actions.news as news_mod
+
+    async def fake_open(_engine, *, urls=None):  # pragma: no cover - not reached
+        return {"opened": 0}
+
+    monkeypatch.setattr(news_mod, "action_tabs_open_set", fake_open)
+    result = asyncio.run(news_mod.action_news_open(engine))
+    assert result["opened"] == 0
+    assert result["articles"] == []

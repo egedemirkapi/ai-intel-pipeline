@@ -64,6 +64,7 @@
 # ── Chat: open things on command ─────────────────────────────────────
 "apps.open"                = "allow"   # chat tool: launch a Windows app by name
 "web.open"                 = "allow"   # chat tool: open a URL / website
+"news.open"                = "allow"   # chat tool / routine step: open the top news articles
 
 # ── Google Workspace — Classroom read added ──────────────────────────
 "gworkspace.read_classroom" = "allow"

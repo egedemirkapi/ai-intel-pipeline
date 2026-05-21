@@ -8,6 +8,7 @@ import IdeaBoard from "@/components/IdeaBoard";
 import IntelFeedPanel from "@/components/IntelFeedPanel";
 import TrendsPanel from "@/components/TrendsPanel";
 import BriefingPanel from "@/components/BriefingPanel";
+import CollectorHeartbeat from "@/components/CollectorHeartbeat";
 import RoutineButtons from "@/components/RoutineButtons";
 import JarvisOrb, { OrbState } from "@/components/JarvisOrb";
 import StatusDot from "@/components/ui/StatusDot";
@@ -48,6 +49,7 @@ export default function Dashboard() {
           <span className="text-xs text-slate-500">mission control</span>
         </div>
         <div className="flex items-center gap-4">
+          <CollectorHeartbeat pulse={pulse} />
           <Link
             href="/routines"
             className="text-xs text-slate-300 hover:text-accent border border-edge hover:border-accent/50 rounded-lg px-3 py-1.5 transition-colors"

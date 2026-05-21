@@ -60,6 +60,11 @@ class JarvisVoice:
         # everything — otherwise it hears its own voice and the clap /
         # wake detectors re-trigger in an infinite feedback loop.
         self._muted = False
+        # Session state. The FIRST wake — clap or "Hey Jarvis" — runs the
+        # welcome ritual once (opens the user's pages, reads the brief).
+        # Every wake after that just listens for a spoken command, so the
+        # pages open exactly once per session, never on a repeat.
+        self._welcomed = False
 
         # Worker thread for the slow STT→chat→TTS pipeline.
         self._work: queue.Queue = queue.Queue()
@@ -136,6 +141,7 @@ class JarvisVoice:
                     model=wc["model"], threshold=wc["threshold"],
                     sample_rate=ac["sample_rate"],
                     silence_ms=wc["silence_ms"],
+                    silence_rms=wc.get("silence_rms", 0.015),
                     max_utterance_s=wc["max_utterance_s"],
                     on_wake=lambda: self._post_voice_state("listening"),
                 )
@@ -151,10 +157,11 @@ class JarvisVoice:
             try:
                 self.clap = ClapDetector(
                     self._on_two_claps,
-                    rms_threshold=cc["rms_threshold"],
-                    min_gap_ms=cc["min_gap_ms"],
-                    max_gap_ms=cc["max_gap_ms"],
-                    cooldown_s=cc["cooldown_s"],
+                    peak_min=cc.get("peak_min", 0.18),
+                    crest_min=cc.get("crest_min", 6.0),
+                    min_gap_ms=cc.get("min_gap_ms", 120),
+                    max_gap_ms=cc.get("max_gap_ms", 650),
+                    cooldown_s=cc.get("cooldown_s", 5.0),
                 )
                 self.mic.add_listener(self._gated(self.clap.feed))
                 logger.info("voice: two-clap detector ready")
@@ -258,6 +265,12 @@ class JarvisVoice:
         if self.stt is None:
             logger.warning("utterance ignored — speech-to-text is unavailable")
             return
+        # The first wake of the session — even via "Hey Jarvis" — opens
+        # the user's usual pages. Do that once, then still handle whatever
+        # was actually said (no spoken brief: they came with a command).
+        if not self._welcomed:
+            self._welcomed = True
+            self._run_welcome(speak_brief=False)
         self._post_voice_state("thinking")
         text = self.stt.transcribe(audio, sample_rate=self.cfg["audio"]["sample_rate"])
         if not text:
@@ -296,24 +309,48 @@ class JarvisVoice:
         return True
 
     def _handle_clap(self) -> None:
-        logger.info("two-clap → /trigger/clap")
+        """A two-clap gesture. The first of the session is the welcome
+        ritual; every clap after that is 'wake up and take a command'."""
+        if not self._welcomed:
+            self._welcomed = True
+            self._run_welcome(speak_brief=True)
+        else:
+            self._handle_command_wake()
+
+    def _run_welcome(self, *, speak_brief: bool) -> None:
+        """First wake of the session — open the user's usual pages (the
+        clap_default workflow, editable in /routines) and, if asked,
+        read the briefing aloud. Runs exactly once per session."""
+        logger.info("first wake → welcome ritual (speak_brief=%s)", speak_brief)
         self._post_voice_state("thinking")
-        fired: list = []
         try:
             r = httpx.post(f"{self.brain_url}/trigger/clap", timeout=60.0)
             r.raise_for_status()
-            fired = r.json().get("fired") or []
         except Exception as exc:
-            logger.warning("clap trigger failed: %s", exc)
-            self.tts.speak("Sorry, that failed.")
-            return
-        # The clap is also the "welcome" gesture — read the briefing aloud.
+            logger.warning("welcome page-open failed: %s", exc)
+        if not speak_brief:
+            return  # arrived with a spoken command — answer that instead
+        spoken = ""
         if self.cfg.get("clap", {}).get("speak_brief", True):
             spoken = self._fetch_brief_spoken()
-            if spoken:
-                self.tts.speak(spoken)
-                return
-        self.tts.speak("Done." if fired else "No clap routine is set up.")
+        if self.tts:
+            self.tts.speak(spoken or "I'm set up and ready.")
+
+    def _handle_command_wake(self) -> None:
+        """A clap after the session has started — acknowledge, then
+        capture the next thing said and route it as a command."""
+        logger.info("clap → listening for a command")
+        if self.wake is None:
+            if self.tts:
+                self.tts.speak("Voice capture isn't available right now.")
+            return
+        if self.tts:
+            self.tts.speak("Yes?")
+        self._post_voice_state("listening")
+        # capture_now() begins utterance capture without needing the wake
+        # word. The mic is muted while "Yes?" plays, so capture only
+        # really starts once Jarvis stops speaking.
+        self.wake.capture_now()
 
     def _fetch_brief_spoken(self) -> str:
         """GET /brief and return its spoken summary (empty string on error)."""

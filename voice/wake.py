@@ -33,6 +33,7 @@ class WakeWordDetector:
         threshold: float = 0.5,
         sample_rate: int = 16000,
         silence_ms: int = 800,
+        silence_rms: float = 0.015,
         max_utterance_s: int = 12,
         on_wake: Callable[[], None] | None = None,
     ) -> None:
@@ -41,6 +42,7 @@ class WakeWordDetector:
         self.threshold = threshold
         self.sample_rate = sample_rate
         self.silence_samples = int(sample_rate * silence_ms / 1000)
+        self.silence_rms = silence_rms  # RMS below this counts as silence
         self.max_utterance_samples = sample_rate * max_utterance_s
 
         # Lazy import — openWakeWord is a heavy optional dep.
@@ -70,6 +72,13 @@ class WakeWordDetector:
         self._utterance: list[np.ndarray] = []
         self._silence_run = 0
         self._capture_started = 0.0
+
+    def capture_now(self) -> None:
+        """Begin capturing an utterance immediately, without the wake
+        word. Used when another trigger — a clap — has already woken
+        Jarvis and the next thing said should be taken as a command."""
+        if not self._capturing:
+            self._start_capture()
 
     def feed(self, frame: np.ndarray) -> None:
         if self._capturing:
@@ -105,7 +114,7 @@ class WakeWordDetector:
         rms = float(np.sqrt(np.mean(np.square(frame)))) if frame.size else 0.0
 
         # Silence accounting — ends the utterance after a quiet gap.
-        if rms < 0.015:
+        if rms < self.silence_rms:
             self._silence_run += len(frame)
         else:
             self._silence_run = 0

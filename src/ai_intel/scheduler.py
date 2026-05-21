@@ -97,10 +97,13 @@ def build_scheduler(engine, config: dict, first_run: bool = False) -> AsyncIOSch
         except Exception as exc:
             logger.warning("Briefing push failed (is the Brain running?): %s", exc)
 
-    sched.add_job(collect_job, "interval", minutes=5, id="collect", misfire_grace_time=60)
+    # 15-minute misfire grace: a laptop sleeping/waking suspends APScheduler,
+    # and a too-small grace makes the job "misfire" and skip — collection
+    # would silently stall after every sleep. 900s lets it resume cleanly.
+    sched.add_job(collect_job, "interval", minutes=5, id="collect", misfire_grace_time=900)
     sched.add_job(
         enrich_job, "interval", minutes=5, id="enrich",
-        misfire_grace_time=60,
+        misfire_grace_time=900,
         next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2),
     )
     sched.add_job(digest_job, "cron", hour="*/2", minute=0, id="digest", misfire_grace_time=300)

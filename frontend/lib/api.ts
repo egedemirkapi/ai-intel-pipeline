@@ -156,6 +156,11 @@ export interface BriefNews {
   url: string;
   source: string;
   ai_relevance: number | null;
+  collected_at?: string | null;
+}
+export interface BriefFresh {
+  last_hour: number;
+  today: number;
 }
 export interface BriefEvent {
   title: string;
@@ -176,6 +181,7 @@ export interface BriefSuggestion {
 }
 export interface Brief {
   generated_at: string;
+  fresh: BriefFresh;
   news: BriefNews[];
   calendar: { summary: string; events: BriefEvent[] };
   homework: { summary: string; assignments: BriefAssignment[] };

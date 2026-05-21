@@ -17,19 +17,23 @@ wake:
   threshold: 0.5            # 0-1; raise to cut false positives
   # After the wake word fires, capture speech until this much silence.
   silence_ms: 800
+  silence_rms: 0.015        # RMS below this counts as silence; lower it
+                            # if soft speech gets cut off mid-command
   max_utterance_s: 12       # hard cap on a single captured utterance
 
 clap:
   enabled: true
-  # A clap is a short, loud transient. Tune to your room.
-  # NOTE: the threshold is deliberately high — a low value lets ambient
-  # noise (doors, keystrokes, coughs) false-fire and open pages on its own.
-  # Lower it only after confirming your room is quiet enough.
-  rms_threshold: 0.45       # 0-1 normalized RMS that counts as a transient
-  min_gap_ms: 150           # ignore double-counts inside one clap
-  max_gap_ms: 550           # two transients within this = a deliberate double-clap
+  # A clap is detected by its SHAPE, not its loudness — a sharp, spiky
+  # impulse, unlike sustained speech. This is why talking no longer
+  # false-fires it. Tune both values to your room + mic with:
+  #     python -m voice.diagnose
+  peak_min: 0.18            # 0-1; a clap must peak at least this loud
+  crest_min: 6.0            # peak/RMS ratio — claps are spiky (8-30+),
+                            # speech is smooth (~3). Sits between them.
+  min_gap_ms: 120           # ignore double-counts inside one clap
+  max_gap_ms: 650           # two transients within this = a deliberate double-clap
   cooldown_s: 5.0           # ignore claps for this long after a trigger
-  speak_brief: true         # a two-clap also reads your briefing aloud (welcome ritual)
+  speak_brief: true         # the FIRST wake of a session reads your briefing aloud
 
 speak:
   # Proactive speech — lets Jarvis talk WITHOUT a wake word: the
