@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 
 MAX_STEPS_DEFAULT = 25
 SETTLE_MS = 600  # let the page settle after an action before the next snapshot
+# Decide-step model. Haiku 4.5 is capable for stepwise UI decisions and sits
+# on a higher rate-limit tier than Sonnet — which matters for this call-heavy
+# loop. With the OAuth bridge configured, prefer="oauth" routes around it.
+DECIDE_MODEL = "claude-haiku-4-5"
 
 _DECIDE_PROMPT = """You are Jarvis's browser navigator. You drive a real browser to complete a task for the user.
 
@@ -218,8 +222,15 @@ async def navigator(engine, *, task: str = "", url: str = "",
             await session.goto(url)
 
         # --- Recipe-first: replay a known-good path if we have one --------
+        # Recipe memory is an optimization — a failure here (a DB hiccup,
+        # a stale schema) must never block the actual navigation.
         recipe_id: int | None = None
-        recipes = recall_recipes(engine, task, k=3)
+        try:
+            recipes = recall_recipes(engine, task, k=3)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("navigator: recipe recall failed (%s) — "
+                            "navigating live", exc)
+            recipes = []
         match = next(
             (r for r in recipes
              if r.get("score", 0) >= 0.78 and r.get("success_count", 0) > 0),
@@ -246,11 +257,27 @@ async def navigator(engine, *, task: str = "", url: str = "",
                 page=snapshot.to_prompt(),
                 history="\n".join(history[-12:]) or "(none yet)",
             )
-            resp = call_llm(
-                [{"role": "user", "content": prompt}],
-                prefer="oauth", model="claude-sonnet-4-6",
-                max_tokens=700, temperature=0.2,
-            )
+            try:
+                resp = call_llm(
+                    [{"role": "user", "content": prompt}],
+                    prefer="oauth", model=DECIDE_MODEL,
+                    max_tokens=700, temperature=0.2,
+                )
+            except Exception as exc:  # noqa: BLE001 — LLM rate-limited / unreachable
+                logger.warning(
+                    "navigator: decide-step LLM call failed — %s", exc)
+                return {
+                    "summary": (
+                        f"navigator paused on '{task}' — the AI service "
+                        f"is rate-limited or unreachable "
+                        f"({type(exc).__name__}). Got through "
+                        f"{len(steps_taken)} step(s); try again shortly."
+                    )[:480],
+                    "prompt_tokens": total_pt,
+                    "completion_tokens": total_ct,
+                    "cost_usd": cost,
+                    "auth_mode": auth_mode,
+                }
             total_pt += resp.prompt_tokens
             total_ct += resp.completion_tokens
             cost += resp.cost_usd
