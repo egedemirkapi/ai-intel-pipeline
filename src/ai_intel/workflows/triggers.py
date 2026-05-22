@@ -91,19 +91,40 @@ def match_app(
 def match_voice(transcript: str, path: Path | None = None) -> str | None:
     """Return the workflow whose ``voice_phrases`` best-match ``transcript``.
 
-    A phrase matches if its normalized form is a substring of the
-    normalized transcript. When several match, the longest phrase wins
-    (most specific).
+    Primary path: a phrase matches if its normalized form is a substring of
+    the normalized transcript; longest phrase wins (most specific).
+
+    Fallback: if no phrase matched and the normalized transcript starts with
+    "run " followed by a known workflow's name (spaces/underscores
+    normalised), that workflow is returned.  E.g. "run routine" resolves
+    ``routine``; "run morning brief" resolves ``morning_brief``.
     """
     norm = _normalize(transcript)
     if not norm:
         return None
+
+    # ── primary: substring-phrase matching ───────────────────────────
+    wfs = load_workflows(path)
     best_name: str | None = None
     best_len = 0
-    for name, wf in load_workflows(path).items():
+    for name, wf in wfs.items():
         for phrase in (wf.get("trigger") or {}).get("voice_phrases") or []:
             np = _normalize(phrase)
             if np and np in norm and len(np) > best_len:
                 best_len = len(np)
                 best_name = name
-    return best_name
+
+    if best_name is not None:
+        return best_name
+
+    # ── fallback: "run <workflow-name>" ──────────────────────────────
+    # Normalize each known name the same way (underscores → spaces).
+    if norm.startswith("run "):
+        spoken_tail = norm[4:]  # everything after "run "
+        for name in wfs:
+            # treat underscores as spaces when comparing
+            normalized_name = _normalize(name.replace("_", " "))
+            if spoken_tail == normalized_name:
+                return name
+
+    return None

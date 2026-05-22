@@ -102,6 +102,24 @@ workflows:
           title: Your Briefing
           body: "{{ steps.0.summary }}"
 
+  routine:
+    description: Open the study tabs and read the daily briefing
+    trigger:
+      button: true
+      voice_phrases: ["run the routine", "run my routine", "start my routine", "the routine"]
+    steps:
+      - classroom.check:
+          days_ahead: 7
+      - tabs.open_set:
+          urls:
+            - https://classroom.google.com
+            - https://claude.ai
+            - https://notebooklm.google.com
+      - brief.compose: {}
+      - notify:
+          title: Your Briefing
+          body: "{{ steps.2.summary }}"
+
   daily_trend_refresh:
     description: Run the synthesizer every morning to keep trend syntheses fresh so the idea-finder always reasons on up-to-date data
     trigger:

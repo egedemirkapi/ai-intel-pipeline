@@ -286,6 +286,74 @@ def test_weekly_idea_run_has_two_steps_in_order(tmp_path):
     assert steps[1].get("agent.run", {}).get("agent_id") == "weekly_ideation"
 
 
+# ─── routine workflow ───────────────────────────────────────────────
+
+
+def test_routine_workflow_loads_and_validates(tmp_path):
+    """routine must load from defaults and pass validate_def."""
+    from ai_intel.workflows.persist import get_workflow, validate_def
+
+    p = tmp_path / "workflows.yaml"
+    wf = get_workflow("routine", path=p)
+    assert wf is not None, "routine workflow not found in defaults"
+    errors = validate_def(wf)
+    assert errors == [], f"validate_def errors: {errors}"
+
+
+def test_routine_workflow_has_voice_phrases(tmp_path):
+    """routine must expose the expected voice phrases."""
+    from ai_intel.workflows.persist import get_workflow
+
+    p = tmp_path / "workflows.yaml"
+    wf = get_workflow("routine", path=p)
+    phrases = (wf.get("trigger") or {}).get("voice_phrases", [])
+    assert "run the routine" in phrases
+    assert "run my routine" in phrases
+    assert "start my routine" in phrases
+    assert "the routine" in phrases
+
+
+def test_routine_workflow_has_button_trigger(tmp_path):
+    """routine must have button: true."""
+    from ai_intel.workflows.persist import get_workflow
+
+    p = tmp_path / "workflows.yaml"
+    wf = get_workflow("routine", path=p)
+    assert (wf.get("trigger") or {}).get("button") is True
+
+
+def test_routine_workflow_has_tabs_and_brief_steps(tmp_path):
+    """routine must include a tabs.open_set step and a brief.compose step."""
+    from ai_intel.workflows.persist import get_workflow
+
+    p = tmp_path / "workflows.yaml"
+    wf = get_workflow("routine", path=p)
+    actions = [list(step.keys())[0] for step in wf["steps"]]
+    assert "tabs.open_set" in actions, f"tabs.open_set not in steps: {actions}"
+    assert "brief.compose" in actions, f"brief.compose not in steps: {actions}"
+
+
+def test_match_voice_run_the_routine(tmp_path):
+    """'run the routine' must resolve to the routine workflow."""
+    p = tmp_path / "workflows.yaml"
+    result = match_voice("run the routine", path=p)
+    assert result == "routine", f"expected 'routine', got {result!r}"
+
+
+def test_match_voice_run_name_fallback_resolves_workflow(tmp_path):
+    """'run routine' (no article) falls back to the routine workflow via name matching."""
+    p = tmp_path / "workflows.yaml"
+    result = match_voice("run routine", path=p)
+    assert result == "routine", f"expected 'routine', got {result!r}"
+
+
+def test_match_voice_run_name_fallback_resolves_underscored_name(tmp_path):
+    """'run morning brief' resolves morning_brief via the name-fallback."""
+    p = tmp_path / "workflows.yaml"
+    result = match_voice("run morning brief", path=p)
+    assert result == "morning_brief", f"expected 'morning_brief', got {result!r}"
+
+
 # ─── workflow.create chat tool ──────────────────────────────────────
 
 

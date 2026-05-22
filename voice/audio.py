@@ -34,7 +34,7 @@ class MicStream:
         *,
         sample_rate: int = 16000,
         block_ms: int = 80,
-        input_device: int | None = None,
+        input_device: int | str | None = None,
     ) -> None:
         self.sample_rate = sample_rate
         self.block_size = int(sample_rate * block_ms / 1000)
@@ -70,8 +70,45 @@ class MicStream:
                 except Exception as exc:  # pragma: no cover
                     logger.warning("mic listener error: %s", exc)
 
+    def _resolve_device(self, sd) -> int | None:  # noqa: ANN001
+        """Resolve self.input_device to an integer index or None (system default).
+
+        * None  → return None (let sounddevice pick the system default).
+        * int   → return as-is.
+        * str   → scan for the first input-capable device whose name contains
+                  the substring (case-insensitive); warn and fall back to None
+                  if nothing matches.
+
+        Any sounddevice error during lookup is caught; falls back to None.
+        """
+        raw = self.input_device
+        if raw is None or isinstance(raw, int):
+            return raw
+        # String substring match
+        try:
+            devices = sd.query_devices()
+            needle = raw.lower()
+            for idx, dev in enumerate(devices):
+                if dev.get("max_input_channels", 0) > 0 and needle in dev["name"].lower():
+                    logger.debug("device substring '%s' matched [%d] %s", raw, idx, dev["name"])
+                    return idx
+            logger.warning(
+                "no input device matching substring '%s' found — falling back to system default",
+                raw,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning("device lookup failed (%s) — falling back to system default", exc)
+        return None
+
     def start(self) -> None:
         import sounddevice as sd
+
+        # Resolve device (substring → index, or keep int/None as-is).
+        try:
+            resolved_device = self._resolve_device(sd)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("device resolution error (%s) — falling back to system default", exc)
+            resolved_device = None
 
         self._running = True
         self._dispatch_thread = threading.Thread(
@@ -83,13 +120,22 @@ class MicStream:
             blocksize=self.block_size,
             channels=1,
             dtype="float32",
-            device=self.input_device,
+            device=resolved_device,
             callback=self._audio_callback,
         )
         self._stream.start()
+
+        # Log the actual device that was opened.
+        try:
+            dev_idx = resolved_device if resolved_device is not None else sd.default.device[0]
+            dev_info = sd.query_devices(dev_idx)
+            dev_name = dev_info["name"]
+        except Exception:  # pragma: no cover
+            dev_idx = resolved_device
+            dev_name = "<unknown>"
         logger.info(
-            "mic stream started: %d Hz, block=%d samples",
-            self.sample_rate, self.block_size,
+            "mic stream started on device [%s] %s: %d Hz, block=%d samples",
+            dev_idx, dev_name, self.sample_rate, self.block_size,
         )
 
     def stop(self) -> None:

@@ -425,16 +425,36 @@ async def _h_context_app(engine) -> dict[str, Any]:
     return {"context": ctx}
 
 
-async def _h_apps_open(engine, *, name: str) -> dict[str, Any]:
-    """Launch a Windows app by name. The user asked in chat — that IS
-    consent — so the app is allowlisted then launched. Resolves the name
-    against the installed-app list for a reliable launch."""
+async def _h_apps_open(engine, *, name: str, desktop: bool = False) -> dict[str, Any]:
+    """Launch a Windows app by name, or open its webapp in the browser.
+
+    For apps that have a web version (Spotify, YouTube, Gmail, etc.) the
+    webapp is opened by default.  Set ``desktop=True`` only when the user
+    explicitly wants the desktop application.
+
+    The user asked in chat — that IS consent — so the app is allowlisted
+    then launched. Resolves the name against the installed-app list for a
+    reliable launch.
+    """
     from ai_intel.workflows.actions.apps import action_apps_launch
+    from ai_intel.workflows.actions.tabs import action_tabs_open_set
     from ai_intel.workflows.app_scanner import add_to_allowlist, list_installed_apps
+    from ai_intel.workflows.web_apps import web_url_for
 
     name = (name or "").strip()
     if not name:
         return {"error": "no app name given"}
+
+    # Web-first: if the app has a known webapp URL and the user did NOT
+    # explicitly ask for the desktop app, open it in the browser.
+    if not desktop:
+        web_url = web_url_for(name)
+        if web_url:
+            result = await action_tabs_open_set(engine, urls=[web_url])
+            result["webapp"] = True
+            result["url"] = web_url
+            result["summary"] = f"Opened {name} webapp at {web_url}"
+            return result
 
     nl = name.lower()
     apps = list_installed_apps()
@@ -702,14 +722,31 @@ def build_registry() -> dict[str, Tool]:
         "apps.open": Tool(
             name="apps.open",
             description=(
-                "Launch a Windows desktop app by name. Use when the user "
-                "says 'open <app>' / 'launch <app>' / 'start <app>' — e.g. "
-                "'open Spotify', 'open Cursor', 'open Claude'. Pass the "
-                "app name as the user said it."
+                "Open an app by name. For apps that also have a web version "
+                "(Spotify, YouTube, Gmail, WhatsApp, Discord, Notion, "
+                "ChatGPT, Maps, Calendar) prefer the WEBAPP — leave "
+                "`desktop` false (the default). Only set `desktop: true` "
+                "when the user explicitly says 'desktop app', 'desktop "
+                "application', or 'installed app'. Use for 'open <app>' / "
+                "'launch <app>' / 'start <app>' — e.g. 'open Spotify', "
+                "'open Cursor', 'open Claude'. Pass the app name as the "
+                "user said it."
             ),
             input_schema={
                 "type": "object",
-                "properties": {"name": {"type": "string", "description": "App name, e.g. 'Spotify'"}},
+                "properties": {
+                    "name": {"type": "string", "description": "App name, e.g. 'Spotify'"},
+                    "desktop": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": (
+                            "Set true ONLY if the user explicitly wants the "
+                            "desktop application (e.g. 'open the Spotify desktop "
+                            "app'). Leave false for all other cases — web-capable "
+                            "apps will open as webapps in the browser."
+                        ),
+                    },
+                },
                 "required": ["name"],
             },
             handler=_h_apps_open,
