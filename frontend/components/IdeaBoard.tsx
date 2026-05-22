@@ -5,11 +5,11 @@ import { api, Idea } from "@/lib/api";
 import Card from "@/components/ui/Card";
 
 const VERDICT_STYLE: Record<string, string> = {
-  escalated: "border-accent/55 text-accent",
-  needs_work: "border-amber-400/55 text-amber-300",
+  escalated: "border-accent/55 text-success",
+  needs_work: "border-warn/55 text-warn",
   borderline: "border-glow/50 text-glow",
-  killed: "border-rose-500/35 text-rose-300/70",
-  proposed: "border-edge text-slate-300",
+  killed: "border-error/35 text-error/70",
+  proposed: "border-edge text-info",
 };
 
 export default function IdeaBoard({ pulse }: { pulse: number }) {
@@ -47,9 +47,11 @@ export default function IdeaBoard({ pulse }: { pulse: number }) {
 
   return (
     <Card title="IDEA BOARD" className="min-h-0 h-full">
-      {err && <p className="text-rose-400 text-xs">{err}</p>}
+      {err && <p className="text-error text-xs">{err}</p>}
       {!err && ideas.length === 0 && (
-        <p className="text-slate-500 text-xs">No ideas yet — run the proposer.</p>
+        <div className="bg-surface/40 border border-dashed border-edge rounded-lg px-3 py-4 text-center">
+          <p className="text-secondary text-xs">No ideas yet — run the proposer to generate the first batch.</p>
+        </div>
       )}
       <div className="flex flex-col gap-2 overflow-y-auto">
         {sorted.map((idea) => {
@@ -57,21 +59,21 @@ export default function IdeaBoard({ pulse }: { pulse: number }) {
           return (
             <div
               key={idea.id}
-              className={`rounded-lg border bg-ink/60 px-3 py-2 ${
-                VERDICT_STYLE[v] ?? "border-edge text-slate-300"
+              className={`rounded-lg border bg-surface/50 px-3 py-2 ${
+                VERDICT_STYLE[v] ?? "border-edge text-secondary"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] uppercase tracking-wide">
+                <span className="label">
                   #{idea.id} · {v}
                 </span>
-                <span className="text-[10px]">
+                <span className="text-2xs font-mono">
                   {idea.evaluator_score != null
                     ? `${idea.evaluator_score}/100`
                     : "—"}
                 </span>
               </div>
-              <p className="text-xs text-slate-200 mt-0.5 line-clamp-3">
+              <p className="text-xs text-primary mt-0.5 line-clamp-3">
                 {idea.idea_text}
               </p>
             </div>

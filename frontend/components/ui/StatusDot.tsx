@@ -3,10 +3,10 @@
 type Tone = "online" | "busy" | "error" | "idle";
 
 const TONE: Record<Tone, { color: string; pulse: boolean }> = {
-  online: { color: "#00f0c0", pulse: false },
+  online: { color: "#34d399", pulse: false },
   busy: { color: "#fbbf24", pulse: true },
-  error: { color: "#fb5e7e", pulse: false },
-  idle: { color: "#5b6b78", pulse: false },
+  error: { color: "#fb7185", pulse: false },
+  idle: { color: "#8a9ca6", pulse: false },
 };
 
 export default function StatusDot({

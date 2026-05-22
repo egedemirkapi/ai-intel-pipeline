@@ -7,8 +7,8 @@ export default function Input({
   return (
     <input
       {...props}
-      className={`bg-ink/70 border border-edge rounded-lg px-3 py-2 text-sm text-slate-100
-        outline-none transition-colors placeholder:text-slate-600
+      className={`bg-surface border border-edge rounded-lg px-3 py-2 text-sm text-primary
+        outline-none transition-colors placeholder:text-muted
         focus:border-accent/60 focus:shadow-glow-soft ${className}`}
     />
   );

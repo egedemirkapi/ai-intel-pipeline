@@ -60,35 +60,40 @@ export default function IntelFeedPanel({ pulse = 0 }: { pulse?: number }) {
       }
     >
       {stats ? (
-        <p className="text-[10px] text-slate-500 mb-3">
+        <p className="text-2xs font-mono text-muted mb-3">
           {stats.last_24h.toLocaleString()} collected in 24h ·{" "}
           {stats.total_items.toLocaleString()} total · last run{" "}
           {ago(stats.minutes_since_last)}
         </p>
       ) : (
-        <p className="text-[10px] text-slate-600 mb-3">loading stats…</p>
+        <p className="text-2xs font-mono text-muted mb-3">loading stats…</p>
       )}
-      {err && <p className="text-rose-400 text-xs">{err}</p>}
+      {err && <p className="text-error text-xs mb-2">{err}</p>}
       <div className="flex flex-col gap-1.5 overflow-y-auto">
+        {items.length === 0 && !err && (
+          <div className="bg-surface/40 border border-dashed border-edge rounded-lg px-3 py-4 text-center">
+            <p className="text-secondary text-sm">No intel items yet — collector may still be warming up.</p>
+          </div>
+        )}
         {items.map((it) => (
           <a
             key={it.id}
             href={it.url}
             target="_blank"
             rel="noreferrer"
-            className="block bg-ink/60 border border-edge/40 hover:border-glow/30 rounded-lg px-3 py-2 transition-colors"
+            className="block bg-surface/50 border border-edge hover:border-accent/45 rounded-lg px-3 py-2 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase text-glow/80 shrink-0">
+              <span className="label text-glow/70 shrink-0">
                 {it.source}
               </span>
               {it.ai_relevance != null && (
-                <span className="text-[10px] text-slate-500">
+                <span className="text-2xs font-mono text-muted">
                   {(it.ai_relevance * 100).toFixed(0)}%
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-200 line-clamp-2">{it.title}</p>
+            <p className="text-xs text-secondary line-clamp-2">{it.title}</p>
           </a>
         ))}
       </div>

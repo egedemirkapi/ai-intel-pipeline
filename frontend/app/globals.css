@@ -5,52 +5,85 @@
 :root {
   --ink: #03080f;
   --panel: #0a1420;
+  --surface: #0f1d2c;
+  --edge: #1e3c4d;
   --accent: #00f0c0;
   --glow: #00e5ff;
-  --text: #dbf3f7;
+  --primary: #e7eff3;
+  --secondary: #aebfc8;
 }
 
 html,
 body {
   /* Deep-sea base with two faint bioluminescent light wells. */
   background:
-    radial-gradient(1100px 560px at 50% -10%, rgba(0, 229, 255, 0.11), transparent 60%),
-    radial-gradient(850px 480px at 92% 108%, rgba(0, 240, 192, 0.07), transparent 55%),
+    radial-gradient(1100px 560px at 50% -10%, rgba(0, 229, 255, 0.1), transparent 60%),
+    radial-gradient(850px 480px at 92% 108%, rgba(0, 240, 192, 0.06), transparent 55%),
     var(--ink);
   background-attachment: fixed;
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Body text defaults to the `secondary` token — headings opt up to
+     `primary`. Nothing inherits a shouting near-white by accident. */
+  color: var(--secondary);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 @layer components {
-  /* Glass card surface — translucent, faint cyan rim, soft depth shadow. */
+  /* Standard glass card — translucent, faint cyan rim, soft depth. */
   .glass {
     background: linear-gradient(
       180deg,
       rgba(14, 30, 42, 0.82),
       rgba(6, 14, 22, 0.92)
     );
-    border: 1px solid rgba(0, 229, 255, 0.14);
+    border: 1px solid rgba(0, 229, 255, 0.13);
     box-shadow:
-      0 10px 34px -16px rgba(0, 0, 0, 0.85),
-      inset 0 1px 0 rgba(0, 229, 255, 0.07);
+      0 12px 36px -18px rgba(0, 0, 0, 0.9),
+      inset 0 1px 0 rgba(0, 229, 255, 0.06);
     /* Modest blur — keeps it cheap on phones over Tailscale. */
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
   }
+
+  /* Hero surface — the Briefing card. A faint accent tint at the top
+     edge + more lift, so "what to act on now" reads as primary. */
+  .glass-hero {
+    background:
+      linear-gradient(180deg, rgba(0, 240, 192, 0.05), transparent 40%),
+      linear-gradient(180deg, rgba(16, 34, 46, 0.92), rgba(7, 16, 24, 0.95));
+    border: 1px solid rgba(0, 240, 192, 0.22);
+    box-shadow:
+      0 18px 50px -22px rgba(0, 0, 0, 0.92),
+      0 0 40px -24px rgba(0, 240, 192, 0.4),
+      inset 0 1px 0 rgba(0, 240, 192, 0.1);
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+  }
+
   .glass-hover {
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
   .glass-hover:hover {
     border-color: rgba(0, 229, 255, 0.3);
     box-shadow:
-      0 10px 34px -16px rgba(0, 0, 0, 0.85),
+      0 12px 36px -18px rgba(0, 0, 0, 0.9),
       0 0 22px -8px rgba(0, 229, 255, 0.4),
       inset 0 1px 0 rgba(0, 229, 255, 0.1);
   }
+
+  /* Section label — small, wide-tracked, all-caps mono. The one place
+     wide tracking is allowed. */
+  .label {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
 }
 
-/* Neon text glow — used sparingly on headings / accents. */
+/* Neon text glow — used sparingly on the wordmark / hero accents. */
 .glow-aqua {
   text-shadow: 0 0 12px rgba(0, 240, 192, 0.5);
 }

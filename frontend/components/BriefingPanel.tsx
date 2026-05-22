@@ -6,8 +6,9 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 
-// The Briefing card — "what should I care about right now": top news,
-// today's calendar + homework, and interest-based suggestions.
+// The Briefing — the dashboard's hero panel. It answers "what should I
+// act on right now": a spoken summary, today's agenda, and — leading —
+// the interest-matched For-You suggestions.
 export default function BriefingPanel() {
   const [brief, setBrief] = useState<Brief | null>(null);
   const [err, setErr] = useState("");
@@ -56,50 +57,137 @@ export default function BriefingPanel() {
     }
   };
 
+  const suggestions = brief?.suggestions ?? [];
+  const news = brief?.news ?? [];
+
   return (
     <Card
+      hero
       title="BRIEFING"
       className="shrink-0"
       right={
         <div className="flex gap-2">
           <Button variant="ghost" onClick={() => setShowInterests((s) => !s)}>
-            {showInterests ? "Hide interests" : `Interests (${interests.length})`}
+            {showInterests ? "Hide" : `Interests · ${interests.length}`}
           </Button>
           <Button variant="ghost" onClick={loadBrief} disabled={loading}>
-            {loading ? "…" : "↻ Refresh"}
+            {loading ? "…" : "↻"}
           </Button>
         </div>
       }
     >
-      {err && <p className="text-rose-400 text-xs mb-2">{err}</p>}
+      {err && <p className="text-error text-xs mb-2">{err}</p>}
 
+      {/* Spoken summary — the brief's voice */}
       {brief?.spoken && (
-        <p className="text-xs text-slate-400 italic mb-3 border-l-2 border-accent/40 pl-3">
+        <p className="text-md text-primary border-l-2 border-accent/60 pl-3 mb-4">
           {brief.spoken}
         </p>
       )}
 
+      {/* Today — compact agenda */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="bg-surface/60 border border-edge rounded-lg px-3 py-2">
+          <p className="label text-glow/60 mb-1.5">Calendar</p>
+          <p className="text-xs text-secondary line-clamp-2">
+            {brief?.calendar.summary || "—"}
+          </p>
+        </div>
+        <div className="bg-surface/60 border border-edge rounded-lg px-3 py-2">
+          <p className="label text-glow/60 mb-1.5">Homework</p>
+          <p className="text-xs text-secondary line-clamp-2">
+            {brief?.homework.summary || "—"}
+          </p>
+        </div>
+      </div>
+
+      {/* For You — the promoted suggestions feed */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="label text-accent">For you</p>
+        {suggestions.length > 0 && (
+          <span className="text-2xs text-muted">{suggestions.length} matched</span>
+        )}
+      </div>
+      <div className="flex flex-col gap-1.5 mb-4">
+        {suggestions.slice(0, 8).map((s) => (
+          <a
+            key={s.id}
+            href={s.url}
+            target="_blank"
+            rel="noreferrer"
+            className="group bg-surface/50 border border-edge hover:border-accent/45 rounded-lg px-3 py-2 transition-colors"
+          >
+            <p className="text-sm text-primary group-hover:text-accent line-clamp-2">
+              {s.title}
+            </p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-2xs uppercase text-glow/60">{s.source}</span>
+              <span className="h-1 w-1 rounded-full bg-edge-strong" />
+              <span className="text-2xs text-muted">interest match</span>
+            </div>
+          </a>
+        ))}
+        {brief && suggestions.length === 0 && (
+          <div className="bg-surface/40 border border-dashed border-edge rounded-lg px-3 py-4 text-center">
+            <p className="text-xs text-secondary mb-2">
+              {interests.length === 0
+                ? "No suggestions yet — tell Jarvis what you care about."
+                : "No matches yet — the feed is still filling up."}
+            </p>
+            {interests.length === 0 && (
+              <Button variant="ghost" onClick={() => setShowInterests(true)}>
+                Add interests →
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Top news — supporting */}
+      <p className="label text-glow/60 mb-2">Top news</p>
+      <div className="flex flex-col gap-1.5">
+        {news.slice(0, 5).map((n) => (
+          <a
+            key={n.id}
+            href={n.url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex gap-2 text-xs text-secondary hover:text-accent"
+          >
+            <span className="text-2xs uppercase text-glow/50 shrink-0 w-16 truncate">
+              {n.source}
+            </span>
+            <span className="line-clamp-1">{n.title}</span>
+          </a>
+        ))}
+        {brief && news.length === 0 && (
+          <span className="text-xs text-muted">No recent news.</span>
+        )}
+      </div>
+
+      {/* Interests editor — collapsible; these seed the suggestions */}
       {showInterests && (
-        <div className="mb-3 bg-ink/50 border border-edge/60 rounded-lg p-3">
-          <p className="text-[11px] tracking-[0.16em] text-accent mb-2">
-            YOUR INTERESTS — these seed the suggestions
+        <div className="mt-4 bg-surface/60 border border-edge rounded-lg p-3">
+          <p className="label text-glow/60 mb-2">
+            Your interests — these seed suggestions
           </p>
           <div className="flex flex-wrap gap-1.5 mb-2">
             {interests.length === 0 && (
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted">
                 None yet — add a few topics you care about.
               </span>
             )}
             {interests.map((it) => (
               <span
                 key={it.id}
-                className="text-[11px] bg-accent/10 border border-accent/30 text-accent rounded-full px-2 py-0.5"
+                className="flex items-center gap-1.5 text-2xs bg-accent/10 border border-accent/30 text-accent rounded-full px-2 py-1"
               >
                 {it.text}
                 <button
                   type="button"
                   onClick={() => removeInterest(it.id)}
-                  className="ml-1.5 text-slate-400 hover:text-rose-300"
+                  className="text-muted hover:text-error"
+                  aria-label={`Remove ${it.text}`}
                 >
                   ×
                 </button>
@@ -120,72 +208,6 @@ export default function BriefingPanel() {
           </div>
         </div>
       )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Today */}
-        <div>
-          <p className="text-[11px] tracking-[0.16em] text-glow/80 mb-2">TODAY</p>
-          <p className="text-xs text-slate-300 mb-1.5">
-            📅 {brief?.calendar.summary || "—"}
-          </p>
-          <p className="text-xs text-slate-300">
-            🎓 {brief?.homework.summary || "—"}
-          </p>
-        </div>
-
-        {/* Top news */}
-        <div>
-          <p className="text-[11px] tracking-[0.16em] text-glow/80 mb-2">
-            TOP NEWS
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {(brief?.news ?? []).slice(0, 5).map((n) => (
-              <a
-                key={n.id}
-                href={n.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-slate-200 hover:text-accent line-clamp-2"
-              >
-                <span className="text-[10px] uppercase text-glow/60 mr-1">
-                  {n.source}
-                </span>
-                {n.title}
-              </a>
-            ))}
-            {brief && brief.news.length === 0 && (
-              <span className="text-xs text-slate-500">No recent news.</span>
-            )}
-          </div>
-        </div>
-
-        {/* For you */}
-        <div>
-          <p className="text-[11px] tracking-[0.16em] text-glow/80 mb-2">
-            FOR YOU
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {(brief?.suggestions ?? []).slice(0, 5).map((s) => (
-              <a
-                key={s.id}
-                href={s.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-slate-200 hover:text-accent line-clamp-2"
-              >
-                {s.title}
-              </a>
-            ))}
-            {brief && brief.suggestions.length === 0 && (
-              <span className="text-xs text-slate-500">
-                {interests.length === 0
-                  ? "Add interests to get suggestions →"
-                  : "No matches yet — the feed is still filling up."}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
     </Card>
   );
 }

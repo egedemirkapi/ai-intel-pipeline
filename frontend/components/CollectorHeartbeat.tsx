@@ -43,7 +43,7 @@ export default function CollectorHeartbeat({ pulse }: { pulse: number }) {
       title={`${s.total_items.toLocaleString()} items in the vault · ${s.last_24h} today`}
     >
       <StatusDot tone={stale ? "error" : "online"} />
-      <span className="text-xs text-slate-500">
+      <span className="text-xs text-muted font-mono">
         collector · {s.last_2h} in 2h · {ago}
       </span>
     </div>

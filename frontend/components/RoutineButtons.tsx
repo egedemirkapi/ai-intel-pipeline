@@ -43,9 +43,7 @@ export default function RoutineButtons({ pulse }: { pulse: number }) {
 
   return (
     <div className="shrink-0 flex items-center gap-2 flex-wrap">
-      <span className="text-[11px] tracking-[0.16em] text-slate-500">
-        ROUTINES
-      </span>
+      <p className="label text-glow/60">ROUTINES</p>
       {routines.map((r) => (
         <Button
           key={r.name}

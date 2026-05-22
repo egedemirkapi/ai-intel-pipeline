@@ -62,31 +62,44 @@ export default function ChatBox({
         className="flex-1 overflow-y-auto flex flex-col gap-2 mb-3"
       >
         {turns.length === 0 && (
-          <p className="text-slate-500 text-xs leading-relaxed">
-            Ask anything — &quot;what&apos;s the fleet doing&quot;, &quot;open
-            Spotify&quot;, &quot;run the process and give me 3 ideas&quot;,
-            &quot;what&apos;s my briefing&quot;.
-          </p>
-        )}
-        {turns.map((t, i) => (
-          <div
-            key={i}
-            className={`rounded-lg px-3 py-2 text-sm ${
-              t.role === "user"
-                ? "bg-accent/10 border border-accent/25 text-slate-100 self-end max-w-[85%]"
-                : "bg-ink/70 border border-edge/50 text-slate-200 self-start max-w-[92%]"
-            }`}
-          >
-            <p className="whitespace-pre-wrap">{t.text}</p>
-            {t.tools && t.tools.length > 0 && (
-              <p className="text-[10px] text-glow/70 mt-1">
-                used: {t.tools.join(", ")}
-              </p>
-            )}
+          <div className="bg-surface/40 border border-dashed border-edge rounded-lg px-3 py-4 text-center">
+            <p className="text-secondary text-sm leading-relaxed">
+              Ask anything — &quot;what&apos;s the fleet doing&quot;, &quot;open
+              Spotify&quot;, &quot;run the process and give me 3 ideas&quot;,
+              &quot;what&apos;s my briefing&quot;.
+            </p>
           </div>
-        ))}
+        )}
+        {turns.map((t, i) => {
+          const isError =
+            t.role === "jarvis" && t.text.startsWith("Error:");
+          const isRefused =
+            t.tools?.some((name) =>
+              name.toLowerCase().includes("refus")
+            ) ?? false;
+
+          return (
+            <div
+              key={i}
+              className={`rounded-lg px-3 py-2 text-sm ${
+                t.role === "user"
+                  ? "bg-accent/10 border border-accent/25 text-primary self-end max-w-[85%]"
+                  : isError
+                  ? "bg-surface/50 border border-error/30 text-error self-start max-w-[92%]"
+                  : "bg-surface/50 border border-edge text-secondary self-start max-w-[92%]"
+              }`}
+            >
+              <p className="whitespace-pre-wrap">{t.text}</p>
+              {t.tools && t.tools.length > 0 && (
+                <p className={`label mt-1.5 ${isRefused ? "text-error" : "text-glow/60"}`}>
+                  used: {t.tools.join(", ")}
+                </p>
+              )}
+            </div>
+          );
+        })}
         {busy && (
-          <div className="bg-ink/70 border border-edge/50 text-slate-400 rounded-lg px-3 py-2 text-sm self-start">
+          <div className="bg-surface/50 border border-edge rounded-lg px-3 py-2 text-sm text-muted self-start">
             thinking…
           </div>
         )}

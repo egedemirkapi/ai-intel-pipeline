@@ -14,9 +14,10 @@ import JarvisOrb, { OrbState } from "@/components/JarvisOrb";
 import StatusDot from "@/components/ui/StatusDot";
 import { useEvents } from "@/lib/useEvents";
 
-// Mission Control — the Jarvis orb is the centerpiece; the live panels
-// orbit it. The orb's animation is driven by Jarvis's actual state:
-// text chat (ChatBox) and the voice tray (voice_state events) both feed it.
+// Mission Control — three zones around the living Jarvis orb. The right
+// zone leads: the Briefing hero answers "what should I act on now"; the
+// left zone carries the fleet and what it produced; the centre is the
+// orb + conversation. Panels reveal in a short staggered cascade.
 export default function Dashboard() {
   // `pulse` increments on every fleet event — panels re-fetch on it.
   const [pulse, setPulse] = useState(0);
@@ -41,25 +42,25 @@ export default function Dashboard() {
   return (
     <main className="h-screen flex flex-col p-4 gap-3 overflow-hidden">
       {/* Header */}
-      <header className="flex items-center justify-between shrink-0">
+      <header className="flex items-center justify-between shrink-0 animate-fade-rise">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-xl font-bold tracking-[0.34em] text-glow glow-cyan">
-            JARVIS
+          <h1 className="font-mono text-lg font-semibold tracking-[0.2em] text-primary glow-cyan">
+            JARVIS<span className="text-accent">.</span>
           </h1>
-          <span className="text-xs text-slate-500">mission control</span>
+          <span className="label text-muted">mission control</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <CollectorHeartbeat pulse={pulse} />
           <Link
             href="/routines"
-            className="text-xs text-slate-300 hover:text-accent border border-edge hover:border-accent/50 rounded-lg px-3 py-1.5 transition-colors"
+            className="label text-muted hover:text-accent border border-edge hover:border-accent/50 rounded-lg px-3 py-2 transition-colors"
           >
             Routines
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 border border-edge rounded-lg px-3 py-2">
             <StatusDot tone={connected ? "online" : "error"} />
-            <span className="text-xs text-slate-500">
-              {connected ? "live" : "reconnecting…"}
+            <span className="label text-muted">
+              {connected ? "live" : "reconnecting"}
             </span>
           </div>
         </div>
@@ -68,26 +69,32 @@ export default function Dashboard() {
       {/* Quick-run routine buttons */}
       <RoutineButtons pulse={pulse} />
 
-      {/* Body — orb at the center, panels orbiting */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[19rem_1fr_21rem] gap-4 min-h-0">
+      {/* Body — three zones; the right zone (Briefing) carries the weight */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[18rem_1fr_24rem] gap-4 min-h-0">
         {/* Left — the fleet + what it produced */}
-        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
+        <div
+          className="flex flex-col gap-3 min-h-0 overflow-y-auto animate-fade-rise"
+          style={{ animationDelay: "60ms" }}
+        >
           <AgentFleetPanel pulse={pulse} />
           <div className="flex-1 min-h-0">
             <IdeaBoard pulse={pulse} />
           </div>
           <div className="flex-1 min-h-0">
-            <TrendsPanel />
+            <TrendsPanel pulse={pulse} />
           </div>
         </div>
 
-        {/* Center — the living orb + the conversation */}
-        <div className="flex flex-col items-center min-h-0 gap-3">
-          <div className="shrink-0 pt-3">
+        {/* Centre — the living orb + the conversation */}
+        <div
+          className="flex flex-col items-center min-h-0 gap-3 animate-fade-rise"
+          style={{ animationDelay: "120ms" }}
+        >
+          <div className="shrink-0 pt-2">
             <JarvisOrb state={jarvisState} />
           </div>
           {lastEvent && (
-            <div className="shrink-0 text-[11px] text-glow/55 truncate max-w-full">
+            <div className="shrink-0 font-mono text-2xs text-glow/55 truncate max-w-full">
               ▸ {lastEvent}
             </div>
           )}
@@ -96,8 +103,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Right — what Jarvis knows: briefing + live news */}
-        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
+        {/* Right — what Jarvis knows: the Briefing hero + live news */}
+        <div
+          className="flex flex-col gap-3 min-h-0 overflow-y-auto animate-fade-rise"
+          style={{ animationDelay: "180ms" }}
+        >
           <BriefingPanel />
           <div className="flex-1 min-h-0">
             <IntelFeedPanel pulse={pulse} />
