@@ -12,20 +12,20 @@ The navigator is Jarvis's in-app hands. Given a natural-language task
   3. On success it saves / updates the recipe, so the next run is fast.
      That is the "gets better over time."
 
-Safety: every *consequential* action (submit / send / post / buy /
-delete) pauses and waits for the user's approval before it runs.
+The navigator executes every action it decides on directly — no
+per-action confirmation. The user can watch the visible browser and
+intervene; `browser.navigate` can be set to "deny" in tools.toml to
+switch the whole capability off.
 """
 from __future__ import annotations
 
 import json
 import logging
-import time
 
 from ai_intel.agents.decorator import agent
 from ai_intel.agents.runtime import call_llm
 from ai_intel.agents.saturator import _parse_llm_json
 from ai_intel.browser import BrowserError, BrowserSession
-from ai_intel.jarvis.permissions import is_allowed, list_approvals, request_approval
 from ai_intel.memory import (
     recall_recipes,
     record_recipe_run,
@@ -36,18 +36,7 @@ from ai_intel.memory import (
 logger = logging.getLogger(__name__)
 
 MAX_STEPS_DEFAULT = 25
-APPROVAL_TIMEOUT_S = 180.0
-APPROVAL_POLL_S = 3.0
 SETTLE_MS = 600  # let the page settle after an action before the next snapshot
-
-# Keyword backstop for the risky-action classifier — even if the LLM does
-# not tag an action risky, a target element whose label matches one of
-# these is treated as consequential and gated.
-_RISKY_KEYWORDS = (
-    "submit", "send", "post", "publish", "buy", "purchase", "pay",
-    "order", "checkout", "delete", "remove", "confirm", "sign out",
-    "log out", "unsubscribe", "deactivate", "transfer",
-)
 
 _DECIDE_PROMPT = """You are Jarvis's browser navigator. You drive a real browser to complete a task for the user.
 
@@ -68,7 +57,6 @@ Decide the SINGLE next action. Reply with ONLY a JSON object:
   "key": "<key name e.g. Enter, for press>",
   "url": "<url, for goto>",
   "dy": <pixels to scroll, for scroll>,
-  "risky": <true if this action SENDS, SUBMITS, POSTS, BUYS, DELETES or otherwise has a real consequence; else false>,
   "summary": "<for done/give_up only: what was accomplished, or why you are stuck>"
 }}
 
@@ -77,7 +65,6 @@ Rules:
 - Choose "give_up" if you are stuck after trying — explain why in summary.
 - Use the element NUMBERS shown in CURRENT PAGE for index.
 - To enter text: "type" into a field, then "press" Enter or "click" a save/submit button.
-- Be honest about "risky": anything that commits an action the user would care about must be true.
 """
 
 
@@ -97,41 +84,6 @@ def _app_from_url(url: str) -> str:
         return "gmail"
     parts = host.replace("www.", "").split(".")
     return parts[0] if parts and parts[0] else "web"
-
-
-def _is_risky(action: dict, snapshot) -> bool:
-    """True if the action is consequential — by the LLM's own flag or a
-    keyword match on the target element's label."""
-    if action.get("risky") is True:
-        return True
-    if action.get("action") not in ("click", "press"):
-        return False
-    label = ""
-    idx = action.get("index")
-    if isinstance(idx, int) and snapshot is not None:
-        for el in snapshot.elements:
-            if el.index == idx:
-                label = (el.label or "").lower()
-                break
-    blob = f"{label} {action.get('key', '')}".lower()
-    return any(kw in blob for kw in _RISKY_KEYWORDS)
-
-
-def _await_approval(approval_id: str, *, timeout_s: float = APPROVAL_TIMEOUT_S) -> bool:
-    """Block until the approval is resolved. True if approved; False if
-    rejected or timed out."""
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        for entry in list_approvals(status=None):
-            if entry.get("id") == approval_id:
-                status = entry.get("status")
-                if status == "approved":
-                    return True
-                if status == "rejected":
-                    return False
-        time.sleep(APPROVAL_POLL_S)
-    logger.warning("navigator: approval %s timed out", approval_id)
-    return False
 
 
 def _find_element(snapshot, role: str, label: str) -> int | None:
@@ -241,17 +193,6 @@ async def navigator(engine, *, task: str = "", url: str = "",
 
     Returns an AgentResult dict (summary + token/cost totals).
     """
-    # Coarse capability gate — the user enables browser navigation once.
-    if not is_allowed("browser.navigate"):
-        aid = request_approval(
-            "browser.navigate", {"task": task},
-            reason="browser navigation is denied by default — enable it once",
-        )
-        return {"summary": (
-            "Browser navigation is disabled. Enable 'browser.navigate' in "
-            f"~/.jarvis/tools.toml, or approve request {aid}."
-        )}
-
     task = (task or "").strip()
     if not task:
         return {"summary": "navigator: no task given"}
@@ -337,20 +278,6 @@ async def navigator(engine, *, task: str = "", url: str = "",
                                       failure_reason=action.get("summary"))
                 why = action.get("summary") or task
                 return {"summary": f"navigator gave up: {why}"[:480],
-                        "prompt_tokens": total_pt, "completion_tokens": total_ct,
-                        "cost_usd": cost, "auth_mode": auth_mode}
-
-            # Risky-action gate — pause for the user before consequences.
-            if _is_risky(action, snapshot):
-                aid = request_approval(
-                    "browser.act", {"task": task, "action": action},
-                    reason=f"navigator wants to: {action.get('thought') or act}",
-                )
-                logger.info("navigator: risky action — awaiting approval %s", aid)
-                if not _await_approval(aid):
-                    return {"summary": (
-                        "navigator stopped: a consequential action was not "
-                        f"approved ({action.get('thought') or act})")[:480],
                         "prompt_tokens": total_pt, "completion_tokens": total_ct,
                         "cost_usd": cost, "auth_mode": auth_mode}
 

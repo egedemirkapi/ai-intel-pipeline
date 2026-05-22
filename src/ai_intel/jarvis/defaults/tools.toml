@@ -69,9 +69,8 @@
 "news.open"                = "allow"   # chat tool / routine step: open the top news articles
 "news.email_digest"        = "allow"   # routine step: summarize news -> PDF -> email
 
-# ── Browser navigator (in-app automation — OFF by default) ───────────
-"browser.navigate"         = "deny"    # drive the browser to do a multi-step task
-"browser.act"              = "deny"    # one consequential in-page action (mid-task gate)
+# ── Browser navigator (in-app automation) ────────────────────────────
+"browser.navigate"         = "allow"   # drive the browser to do a multi-step task
 
 # ── Google Workspace — Classroom read added ──────────────────────────
 "gworkspace.read_classroom" = "allow"
