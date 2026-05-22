@@ -101,3 +101,21 @@ workflows:
       - notify:
           title: Your Briefing
           body: "{{ steps.0.summary }}"
+
+  daily_trend_refresh:
+    description: Run the synthesizer every morning to keep trend syntheses fresh so the idea-finder always reasons on up-to-date data
+    trigger:
+      schedule: "0 6 * * *"
+    steps:
+      - agent.run:
+          agent_id: synthesizer
+
+  weekly_idea_run:
+    description: Every Monday morning refresh trends then run the idea-finder to generate a new batch of startup ideas off the latest synthesis
+    trigger:
+      schedule: "0 6 * * 1"
+    steps:
+      - agent.run:
+          agent_id: synthesizer
+      - agent.run:
+          agent_id: weekly_ideation

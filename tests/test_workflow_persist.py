@@ -222,6 +222,70 @@ def test_workflows_with_schedule_lists_scheduled(tmp_path):
     assert found.get("daily_digest") == "0 8 * * *"
 
 
+# ─── builtin scheduled workflows ───────────────────────────────────
+
+
+def test_daily_trend_refresh_loads_and_validates(tmp_path):
+    """daily_trend_refresh must load from defaults and pass validate_def."""
+    from ai_intel.workflows.persist import get_workflow, validate_def
+
+    p = tmp_path / "workflows.yaml"
+    wf = get_workflow("daily_trend_refresh", path=p)
+    assert wf is not None, "daily_trend_refresh not found in defaults"
+    errors = validate_def(wf)
+    assert errors == [], f"validate_def errors: {errors}"
+
+
+def test_weekly_idea_run_loads_and_validates(tmp_path):
+    """weekly_idea_run must load from defaults and pass validate_def."""
+    from ai_intel.workflows.persist import get_workflow, validate_def
+
+    p = tmp_path / "workflows.yaml"
+    wf = get_workflow("weekly_idea_run", path=p)
+    assert wf is not None, "weekly_idea_run not found in defaults"
+    errors = validate_def(wf)
+    assert errors == [], f"validate_def errors: {errors}"
+
+
+def test_builtin_scheduled_workflows_appear_in_workflows_with_schedule(tmp_path):
+    """workflows_with_schedule must return both new builtins with correct cron strings."""
+    from ai_intel.workflows.triggers import workflows_with_schedule
+
+    p = tmp_path / "workflows.yaml"
+    found = dict(workflows_with_schedule(path=p))
+    assert found.get("daily_trend_refresh") == "0 6 * * *", (
+        f"daily_trend_refresh cron mismatch: {found.get('daily_trend_refresh')!r}"
+    )
+    assert found.get("weekly_idea_run") == "0 6 * * 1", (
+        f"weekly_idea_run cron mismatch: {found.get('weekly_idea_run')!r}"
+    )
+
+
+def test_daily_trend_refresh_has_one_synthesizer_step(tmp_path):
+    """daily_trend_refresh must have exactly one step: agent.run synthesizer."""
+    from ai_intel.workflows.persist import get_workflow
+
+    p = tmp_path / "workflows.yaml"
+    wf = get_workflow("daily_trend_refresh", path=p)
+    steps = wf["steps"]
+    assert len(steps) == 1
+    step = steps[0]
+    assert "agent.run" in step
+    assert step["agent.run"]["agent_id"] == "synthesizer"
+
+
+def test_weekly_idea_run_has_two_steps_in_order(tmp_path):
+    """weekly_idea_run must have two steps: synthesizer then weekly_ideation."""
+    from ai_intel.workflows.persist import get_workflow
+
+    p = tmp_path / "workflows.yaml"
+    wf = get_workflow("weekly_idea_run", path=p)
+    steps = wf["steps"]
+    assert len(steps) == 2
+    assert steps[0].get("agent.run", {}).get("agent_id") == "synthesizer"
+    assert steps[1].get("agent.run", {}).get("agent_id") == "weekly_ideation"
+
+
 # ─── workflow.create chat tool ──────────────────────────────────────
 
 
