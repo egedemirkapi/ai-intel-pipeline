@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 import numpy as np
 from sqlmodel import Session, select
 
-from ai_intel.db.models import Embedding, Item, PersonalNote
+from ai_intel.db.models import Embedding, Item, NavigationRecipe, PersonalNote
 from ai_intel.memory.embed import Embedder, get_embedder
 
 logger = logging.getLogger(__name__)
@@ -167,3 +168,109 @@ def add_note(
         session.add(emb)
         session.commit()
         return note.id  # type: ignore[return-value]
+
+
+# ─── Navigation recipes (Phase 3) ────────────────────────────────────────
+
+
+def save_recipe(
+    engine,
+    task_description: str,
+    steps: list,
+    app: str,
+    *,
+    embedder: Embedder | None = None,
+) -> int:
+    """Persist a navigation recipe and embed its task description.
+
+    Creates a ``NavigationRecipe`` row and an ``Embedding`` row with
+    ``recipe_id`` set (``item_id`` and ``note_id`` are None).
+
+    Args:
+        task_description: Human-readable description of the task.
+        steps: List of step dicts describing the UI sequence.
+        app: Identifier for the target app (e.g. ``"notebooklm"``).
+        embedder: Optional embedder; defaults to ``get_embedder()``.
+
+    Returns:
+        The new ``NavigationRecipe.id``.
+    """
+    import json as _json
+
+    task_description = (task_description or "").strip()
+    if not task_description:
+        raise ValueError("task_description cannot be empty")
+    embedder = embedder or get_embedder()
+    now = datetime.now(timezone.utc)
+    vec = embed_text(embedder, task_description)
+
+    with Session(engine) as session:
+        recipe = NavigationRecipe(
+            task_description=task_description,
+            steps_json=_json.dumps(steps),
+            app=app,
+            success_count=0,
+            failure_count=0,
+            last_failure_reason=None,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(recipe)
+        session.commit()
+        session.refresh(recipe)
+        emb = Embedding(
+            item_id=None,
+            note_id=None,
+            recipe_id=recipe.id,
+            model=embedder.model,
+            dim=int(vec.shape[0]),
+            vector=vec.astype(np.float32).tobytes(),
+            created_at=now,
+        )
+        session.add(emb)
+        session.commit()
+        return recipe.id  # type: ignore[return-value]
+
+
+def update_recipe_steps(engine, recipe_id: int, steps: list) -> None:
+    """Overwrite the steps of an existing recipe and bump ``updated_at``.
+
+    Used when a replay self-heals: the corrected step sequence replaces
+    the old one so the next replay starts from the improved version.
+    """
+    import json as _json
+
+    with Session(engine) as session:
+        recipe = session.get(NavigationRecipe, recipe_id)
+        if recipe is None:
+            raise ValueError(f"NavigationRecipe id={recipe_id} not found")
+        recipe.steps_json = _json.dumps(steps)
+        recipe.updated_at = datetime.now(timezone.utc)
+        session.add(recipe)
+        session.commit()
+
+
+def record_recipe_run(
+    engine,
+    recipe_id: int,
+    *,
+    success: bool,
+    failure_reason: Optional[str] = None,
+) -> None:
+    """Increment ``success_count`` or ``failure_count`` and bump ``updated_at``.
+
+    On failure, ``last_failure_reason`` is overwritten with ``failure_reason``
+    so the most-recent failure is always surfaced for debugging.
+    """
+    with Session(engine) as session:
+        recipe = session.get(NavigationRecipe, recipe_id)
+        if recipe is None:
+            raise ValueError(f"NavigationRecipe id={recipe_id} not found")
+        if success:
+            recipe.success_count += 1
+        else:
+            recipe.failure_count += 1
+            recipe.last_failure_reason = failure_reason
+        recipe.updated_at = datetime.now(timezone.utc)
+        session.add(recipe)
+        session.commit()

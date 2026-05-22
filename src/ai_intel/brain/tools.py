@@ -503,6 +503,22 @@ async def _h_web_open(engine, *, url: str = "", urls: list | None = None) -> dic
     return await action_tabs_open_set(engine, urls=norm)
 
 
+async def _h_browser_navigate(engine, *, task: str = "", url: str = "") -> dict[str, Any]:
+    """Drive the browser to complete an in-app task via the navigator agent."""
+    from ai_intel.agents import AGENT_REGISTRY
+
+    if not task:
+        return {"error": "no task given"}
+    fn = AGENT_REGISTRY.get("navigator")
+    if fn is None:
+        return {"error": "navigator agent unavailable"}
+    try:
+        result = await fn(engine, task=task, url=url)
+    except Exception as exc:  # noqa: BLE001 — surface to the chat LLM
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    return result or {"summary": "(no result)"}
+
+
 # ─── Tool registry ─────────────────────────────────────────────────
 
 
@@ -561,6 +577,26 @@ def build_registry() -> dict[str, Tool]:
                 "required": ["agent_id"],
             },
             handler=_h_agents_run,
+        ),
+        "browser.navigate": Tool(
+            name="browser.navigate",
+            description=(
+                "Drive the browser to DO a multi-step task inside a "
+                "webapp — e.g. 'create a new notebook in NotebookLM', or "
+                "'in Google Classroom open the Chemistry class and find "
+                "the exam'. Use when the user wants something done INSIDE "
+                "an app, not merely a page opened. Give a clear `task`; "
+                "add `url` if you know where to start."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "description": "The in-app task, in plain language"},
+                    "url": {"type": "string", "description": "Optional starting URL"},
+                },
+                "required": ["task"],
+            },
+            handler=_h_browser_navigate,
         ),
         "ideas.list": Tool(
             name="ideas.list",

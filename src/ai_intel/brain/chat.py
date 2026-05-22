@@ -55,6 +55,11 @@ Behavior:
   WhatsApp, Discord, Notion, ChatGPT, Maps, Calendar) always prefer the
   webapp — leave `desktop` false. Only set `desktop: true` when the user
   explicitly says "desktop app" / "desktop application" / "installed app".
+- To DO something INSIDE a webapp — multi-step actions like "create a new
+  notebook in NotebookLM" or "in Google Classroom open the Chemistry
+  class and find the exam" — call browser.navigate with a clear `task`
+  (and an optional starting `url`). Use this when the user wants
+  something done inside an app, not merely a page opened.
 - AUTOMATIONS: when the user describes a recurring or triggered task
   ("every day...", "each morning...", "automatically email me...",
   "when I open X..."), call workflow.create. Translate plain-language

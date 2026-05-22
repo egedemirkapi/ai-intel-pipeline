@@ -20,6 +20,7 @@ Public surface:
 from ai_intel.agents.decorator import agent
 from ai_intel.agents.evaluator import evaluator
 from ai_intel.agents.ideation import weekly_ideation
+from ai_intel.agents.navigator import navigator
 from ai_intel.agents.observability import (
     recent_runs,
     last_completed,
@@ -42,6 +43,7 @@ AGENT_REGISTRY = {
     "proposer":        proposer,
     "evaluator":       evaluator,
     "weekly_ideation": weekly_ideation,
+    "navigator":       navigator,
 }
 
 __all__ = [
@@ -59,4 +61,5 @@ __all__ = [
     "proposer",
     "evaluator",
     "weekly_ideation",
+    "navigator",
 ]

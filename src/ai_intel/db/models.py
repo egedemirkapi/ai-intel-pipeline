@@ -44,10 +44,11 @@ class Digest(SQLModel, table=True):
 
 class Embedding(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    # Exactly one of these two is set; the pair (item_id, note_id) is the
-    # natural key for "what does this embedding cover".
+    # Exactly one of these three is set; the triplet (item_id, note_id,
+    # recipe_id) is the natural key for "what does this embedding cover".
     item_id: Optional[int] = Field(default=None, foreign_key="item.id", index=True)
     note_id: Optional[int] = Field(default=None, foreign_key="personalnote.id", index=True)
+    recipe_id: Optional[int] = Field(default=None, foreign_key="navigationrecipe.id", index=True)
     model: str  # e.g. "voyage-3" or "fake-256"
     dim: int
     vector: bytes  # np.float32(dim,).tobytes()
@@ -74,6 +75,25 @@ class MemoryQuery(SQLModel, table=True):
     k: int
     result_ids_json: Optional[str] = None  # JSON list[int] of Item/Note ids returned
     created_at: datetime = Field(index=True)
+
+
+class NavigationRecipe(SQLModel, table=True):
+    """Recorded working sequence of UI steps for a task.
+
+    Jarvis saves the step list on success so it can replay the exact
+    navigation next time and improve the sequence over time (self-healing).
+    Embedded via Embedding.recipe_id so semantic recall finds relevant
+    recipes without full-table scans.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_description: str
+    steps_json: str  # JSON list of step dicts
+    app: str = Field(index=True)  # e.g. "notebooklm", "classroom"
+    success_count: int = Field(default=0)
+    failure_count: int = Field(default=0)
+    last_failure_reason: Optional[str] = None
+    created_at: datetime = Field(index=True)
+    updated_at: datetime = Field(index=True)
 
 
 # ─── Agent fleet (Phase 7) ──────────────────────────────────────────────

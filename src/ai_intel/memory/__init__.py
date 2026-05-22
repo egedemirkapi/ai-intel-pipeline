@@ -12,8 +12,15 @@ on environment:
                                          an extra credential)
 """
 from ai_intel.memory.embed import Embedder, FakeEmbedder, VoyageEmbedder, get_embedder
-from ai_intel.memory.retrieve import RecallResult, recall
-from ai_intel.memory.store import add_note, embed_pending, embed_text
+from ai_intel.memory.retrieve import RecallResult, recall, recall_recipes
+from ai_intel.memory.store import (
+    add_note,
+    embed_pending,
+    embed_text,
+    record_recipe_run,
+    save_recipe,
+    update_recipe_steps,
+)
 
 __all__ = [
     "Embedder",
@@ -22,7 +29,11 @@ __all__ = [
     "get_embedder",
     "RecallResult",
     "recall",
+    "recall_recipes",
     "add_note",
     "embed_pending",
     "embed_text",
+    "save_recipe",
+    "update_recipe_steps",
+    "record_recipe_run",
 ]

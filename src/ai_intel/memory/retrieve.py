@@ -19,7 +19,7 @@ from typing import Literal, Optional
 import numpy as np
 from sqlmodel import Session, select
 
-from ai_intel.db.models import Embedding, Item, MemoryQuery, PersonalNote
+from ai_intel.db.models import Embedding, Item, MemoryQuery, NavigationRecipe, PersonalNote
 from ai_intel.memory.embed import Embedder, get_embedder
 
 logger = logging.getLogger(__name__)
@@ -182,3 +182,92 @@ def _log_query(
         session.commit()
     except Exception as exc:
         logger.debug("MemoryQuery log failed (non-fatal): %s", exc)
+
+
+# ─── Navigation recipe recall (Phase 3) ──────────────────────────────────
+
+
+def recall_recipes(
+    engine,
+    query: str,
+    *,
+    k: int = 5,
+    app: str | None = None,
+    embedder: Embedder | None = None,
+) -> list[dict]:
+    """Top-k semantic recall over NavigationRecipe rows.
+
+    Mirrors the numpy dot-product approach in ``recall()``: embeds ``query``,
+    stacks all recipe embeddings into a matrix, computes cosine similarity in
+    one pass, and returns the top-k as plain dicts.
+
+    Args:
+        query: Natural-language description of the task to find.
+        k: Maximum number of results.
+        app: If given, restrict to recipes whose ``app`` field matches.
+        embedder: Optional embedder; defaults to ``get_embedder()``.
+
+    Returns:
+        List of dicts (descending similarity order), each containing::
+
+            {
+                "id": int,
+                "score": float,
+                "task_description": str,
+                "app": str,
+                "steps": list,           # parsed from steps_json
+                "success_count": int,
+                "failure_count": int,
+            }
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    embedder = embedder or get_embedder()
+    q_vec = embedder.embed([query])[0]
+    # Normalize — embedders return normalized but defensive copy is cheap
+    q_norm = np.linalg.norm(q_vec)
+    if q_norm > 0:
+        q_vec = q_vec / q_norm
+
+    with Session(engine) as session:
+        # Fetch only Embedding rows that belong to a recipe, matching the model
+        emb_rows = session.exec(
+            select(Embedding).where(
+                Embedding.model == embedder.model,
+                Embedding.recipe_id.is_not(None),  # noqa: E711
+            )
+        ).all()
+
+        if not emb_rows:
+            return []
+
+        # Stack into a single matrix for one dot product
+        mat = np.stack([_decode(r.vector, r.dim) for r in emb_rows])
+        sims = mat @ q_vec  # (N,)
+
+        order = np.argsort(-sims)  # descending
+
+        results: list[dict] = []
+        for idx in order:
+            r = emb_rows[int(idx)]
+            score = float(sims[int(idx)])
+            recipe = session.get(NavigationRecipe, r.recipe_id)
+            if recipe is None:
+                continue
+            if app is not None and recipe.app != app:
+                continue
+            results.append({
+                "id": recipe.id,
+                "score": score,
+                "task_description": recipe.task_description,
+                "app": recipe.app,
+                "steps": json.loads(recipe.steps_json),
+                "success_count": recipe.success_count,
+                "failure_count": recipe.failure_count,
+            })
+            if len(results) >= k:
+                break
+
+    return results
