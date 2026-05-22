@@ -30,6 +30,14 @@ import sys
 import time
 from pathlib import Path
 
+# The supervisor's own single-instance guard — stops two supervisors from
+# fighting over the same services. Reuses the project's lock; degrades
+# gracefully if ai_intel isn't importable.
+try:
+    from ai_intel.single_instance import acquire_single_instance
+except ImportError:  # pragma: no cover
+    acquire_single_instance = None
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -37,6 +45,9 @@ from pathlib import Path
 SUPERVISOR_LAUNCHER_NAME = "jarvis-supervisor.vbs"
 OLD_COLLECTOR_LAUNCHER_NAME = "ai-intel-collector.vbs"
 POLL_INTERVAL = 30  # seconds between liveness checks
+FAST_FAIL_SECONDS = 20  # a service exiting within this of launch counts as a crash
+MAX_FAST_FAILS = 5  # consecutive crashes before a service is backed off
+BACKOFF_SECONDS = 300  # how long to pause relaunching a crash-looping service
 
 # Service definitions: (label, python_variant, module_args, log_filename)
 # python_variant is "python" or "pythonw" (no console window).
@@ -91,8 +102,10 @@ def _supervisor_vbs_body() -> str:
     log = root / "data" / "supervisor.log"
     script = root / "scripts" / "supervisor.py"
     # --run skips the install flow and goes straight to the supervise loop.
+    # -u keeps stdout unbuffered so supervisor.log updates live (pythonw
+    # otherwise block-buffers and the log looks empty while it runs).
     inner = (
-        f'cmd /c cd /d "{root}" && "{py}" "{script}" --run '
+        f'cmd /c cd /d "{root}" && "{py}" -u "{script}" --run '
         f'>> "{log}" 2>&1'
     )
     # VBScript string literals: double up embedded quotes.
@@ -209,7 +222,20 @@ def _launch(root: Path, variant: str, module_args: list[str], log_fh) -> subproc
 
 
 def supervise() -> None:
-    """Main loop — poll every POLL_INTERVAL seconds; relaunch dead services."""
+    """Main loop — poll every POLL_INTERVAL seconds; relaunch dead services.
+
+    A service that keeps crashing fast is backed off for BACKOFF_SECONDS
+    after MAX_FAST_FAILS consecutive crashes, so a broken service can't
+    spin a relaunch-every-POLL_INTERVAL loop forever.
+    """
+    # Only one supervisor at a time — a second would fight over the same
+    # services and double every log line.
+    if acquire_single_instance is not None and not acquire_single_instance(
+        "jarvis-supervisor"
+    ):
+        print("[supervisor] another supervisor is already running — exiting.")
+        return
+
     root = repo_root()
     # Open one persistent log file handle per service.
     log_handles = {
@@ -219,6 +245,10 @@ def supervise() -> None:
     handles: dict[str, subprocess.Popen | None] = {
         label: None for label, _, _, _ in _SERVICES
     }
+    # Crash-loop tracking, per service.
+    launched_at: dict[str, float] = {label: 0.0 for label, _, _, _ in _SERVICES}
+    fail_count: dict[str, int] = {label: 0 for label, _, _, _ in _SERVICES}
+    backoff_until: dict[str, float] = {label: 0.0 for label, _, _, _ in _SERVICES}
 
     # Honour Ctrl+C / SIGTERM: stop the loop, leave services running.
     _running = [True]
@@ -233,22 +263,43 @@ def supervise() -> None:
     print(f"[supervisor] started (poll interval {POLL_INTERVAL}s)")
 
     while _running[0]:
+        now = time.monotonic()
         for label, variant, module_args, _fname in _SERVICES:
             handle = handles[label]
-            alive = handle is not None and handle.poll() is None
-            if alive:
+            if handle is not None and handle.poll() is None:
                 continue  # already running — nothing to do
 
-            exit_code = handle.poll() if handle is not None else None
+            # Still inside a back-off window for a crash-looping service?
+            if now < backoff_until[label]:
+                continue
+
             if handle is not None:
+                ran_for = now - (launched_at[label] or now)
+                exit_code = handle.poll()
+                if ran_for < FAST_FAIL_SECONDS:
+                    fail_count[label] += 1
+                else:
+                    fail_count[label] = 0  # ran a healthy while — a normal restart
                 print(
-                    f"[supervisor] {label} exited (code={exit_code}) — relaunching"
+                    f"[supervisor] {label} exited (code={exit_code}, "
+                    f"ran {ran_for:.0f}s) — relaunching"
                 )
             else:
                 print(f"[supervisor] {label} not started — launching")
 
+            # Too many fast crashes in a row — pause this one and warn.
+            if fail_count[label] >= MAX_FAST_FAILS:
+                backoff_until[label] = now + BACKOFF_SECONDS
+                fail_count[label] = 0
+                print(
+                    f"[supervisor] WARNING: {label} crashed {MAX_FAST_FAILS}x "
+                    f"in a row — backing off {BACKOFF_SECONDS}s before retrying"
+                )
+                continue
+
             try:
                 handles[label] = _launch(root, variant, module_args, log_handles[label])
+                launched_at[label] = now
                 print(f"[supervisor] {label} launched (pid={handles[label].pid})")
             except Exception as exc:
                 print(f"[supervisor] {label} failed to launch: {exc}")
