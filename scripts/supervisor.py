@@ -325,7 +325,18 @@ def supervise() -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _force_utf8_stdio() -> None:
+    """Reconfigure stdout/stderr to UTF-8 so printing log lines that contain
+    non-cp1252 characters doesn't crash on a Windows console or pipe."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(
         description=(
             "Jarvis supervisor — keeps Brain, Collector, and Voice tray alive 24/7"
