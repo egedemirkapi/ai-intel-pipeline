@@ -519,6 +519,117 @@ async def _h_browser_navigate(engine, *, task: str = "", url: str = "") -> dict[
     return result or {"summary": "(no result)"}
 
 
+# ── Web research (live internet access) ──────────────────────────────
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+
+def _strip_html(html_text: str) -> str:
+    """Crude HTML → readable text. Strips <script>/<style> blocks then
+    all remaining tags, unescapes entities, collapses whitespace. Good
+    enough for the LLM to read the substance of an article."""
+    import re
+    from html import unescape
+
+    body = re.sub(r"<script[^>]*>.*?</script>", " ", html_text,
+                  flags=re.DOTALL | re.IGNORECASE)
+    body = re.sub(r"<style[^>]*>.*?</style>", " ", body,
+                  flags=re.DOTALL | re.IGNORECASE)
+    body = re.sub(r"<[^>]+>", " ", body)
+    body = unescape(body)
+    body = re.sub(r"\s+", " ", body).strip()
+    return body
+
+
+async def _h_web_search(engine, *, query: str, k: int = 5) -> dict[str, Any]:
+    """Web search via DuckDuckGo HTML. Returns top results with title,
+    url, snippet so the chat LLM can answer questions it has no live
+    information for (weather, today's news, current prices, etc.)."""
+    import re
+    from html import unescape
+    from urllib.parse import unquote
+
+    import httpx
+
+    q = (query or "").strip()
+    if not q:
+        return {"error": "no query given"}
+    k = max(1, min(int(k or 5), 10))
+    try:
+        async with httpx.AsyncClient(
+            timeout=10.0, follow_redirects=True,
+            headers={"User-Agent": _BROWSER_UA},
+        ) as client:
+            r = await client.post(
+                "https://html.duckduckgo.com/html/", data={"q": q},
+            )
+            r.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"search failed: {type(exc).__name__}: {exc}"}
+
+    pattern = re.compile(
+        r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.+?)</a>'
+        r'.*?<a[^>]+class="result__snippet"[^>]*>(.+?)</a>',
+        re.DOTALL,
+    )
+    results: list[dict[str, str]] = []
+    for m in pattern.finditer(r.text):
+        url, title_html, snippet_html = m.group(1), m.group(2), m.group(3)
+        # DuckDuckGo wraps outbound links via /l/?uddg=<encoded URL>
+        uddg = re.search(r"uddg=([^&]+)", url)
+        if uddg:
+            url = unquote(uddg.group(1))
+        title = unescape(re.sub(r"<[^>]+>", "", title_html)).strip()
+        snippet = unescape(re.sub(r"<[^>]+>", "", snippet_html)).strip()
+        results.append({"title": title, "url": url, "snippet": snippet})
+        if len(results) >= k:
+            break
+    if not results:
+        return {"results": [], "summary": f"no results for {q!r}"}
+    return {
+        "results": results,
+        "summary": f"found {len(results)} result(s) for {q!r}",
+    }
+
+
+async def _h_web_fetch(engine, *, url: str, max_chars: int = 5000) -> dict[str, Any]:
+    """Fetch a single URL and return its readable text. Use after
+    web.search picks a promising result, or when the user gives an
+    explicit URL to read."""
+    import httpx
+
+    u = (url or "").strip()
+    if not u:
+        return {"error": "no url given"}
+    if not (u.startswith("http://") or u.startswith("https://")):
+        u = "https://" + u
+    max_chars = max(200, min(int(max_chars or 5000), 20000))
+    try:
+        async with httpx.AsyncClient(
+            timeout=15.0, follow_redirects=True,
+            headers={"User-Agent": _BROWSER_UA},
+        ) as client:
+            r = await client.get(u)
+            r.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"fetch failed: {type(exc).__name__}: {exc}"}
+
+    ctype = (r.headers.get("content-type") or "").lower()
+    body = r.text
+    if "html" in ctype or body.lstrip().startswith("<"):
+        body = _strip_html(body)
+    if len(body) > max_chars:
+        body = body[:max_chars] + "...[truncated]"
+    return {
+        "url": str(r.url),
+        "status": r.status_code,
+        "content_type": ctype.split(";")[0].strip(),
+        "content": body,
+    }
+
+
 # ─── Tool registry ─────────────────────────────────────────────────
 
 
@@ -803,6 +914,50 @@ def build_registry() -> dict[str, Tool]:
                 },
             },
             handler=_h_web_open,
+        ),
+        "web.search": Tool(
+            name="web.search",
+            description=(
+                "Search the live web. Returns the top results (title, url, "
+                "snippet). Use whenever the user asks about something you "
+                "do NOT already know live — the weather, current events, "
+                "today's news, prices, scores, definitions, who/what "
+                "someone is, lookups, recent facts. Follow up with "
+                "web.fetch on a promising URL to read the page contents."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "k": {
+                        "type": "integer", "default": 5,
+                        "minimum": 1, "maximum": 10,
+                    },
+                },
+                "required": ["query"],
+            },
+            handler=_h_web_search,
+        ),
+        "web.fetch": Tool(
+            name="web.fetch",
+            description=(
+                "Fetch one URL and return its readable text content. Use "
+                "after web.search picks a promising result, or when the "
+                "user gives a specific URL to read. Returns plain text, "
+                "truncated."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "max_chars": {
+                        "type": "integer", "default": 5000,
+                        "minimum": 200, "maximum": 20000,
+                    },
+                },
+                "required": ["url"],
+            },
+            handler=_h_web_fetch,
         ),
         "news.open": Tool(
             name="news.open",
