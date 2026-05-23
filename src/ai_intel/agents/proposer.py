@@ -36,6 +36,7 @@ from ai_intel.db.models import (
     SaturationAssessment,
     TrendSynthesis,
 )
+from ai_intel.founder import load_founder_profile
 from ai_intel.memory.retrieve import recall
 from ai_intel.personas import load_persona
 from sqlmodel import desc
@@ -47,25 +48,45 @@ PROPOSER_PROMPT = """You are a founder reading this morning's tech news.
 You've watched dozens of startups die — you know the failure patterns by
 heart. You've internalized {persona_name}'s mental models so deeply they
 feel like your own intuitions. You don't brainstorm random ideas. You
-hunt for the *specific gap* a shift in the ecosystem just opened.
+hunt for the *specific gap* a shift in the ecosystem just opened, in a
+domain where YOU — the founder profiled below — actually have edge.
 
-You're going to be shown one new tech signal, the items adjacent to it,
-the saturation of that space, a current user pain, deep founder essay
-excerpts, prior attempts that have already been killed, and post-mortems
-of failed startups in adjacent territory. Your job is NOT to combine
-these into an idea — it is to:
+You will be shown the founder's lived edge, one new tech signal, adjacent
+items, saturation, a current user pain, founder essay excerpts, prior
+kill attempts in this space, RECENT KILL PATTERNS the evaluator has been
+hammering on across recent runs, and post-mortems of failed startups
+nearby. Your job — in this order:
 
-  1. **Recognize the underlying shift**. Look at the tech signal +
-     adjacent items together. What's actually changing? What capability
-     is becoming possible *now* that wasn't 12-24 months ago?
-  2. **Identify the gap**. Cross-reference saturation, killed attempts,
-     and failure parallels. What's *underserved*? Who has a real pain
-     RIGHT NOW that this new capability makes solvable for the first
-     time, that nobody is correctly attacking yet?
-  3. **Propose into the gap**. Only then write a single concrete idea
-     that lives in that gap — narrow enough to ship in 8 weeks,
-     specific enough that a real person would say "yes I'd pay for that"
-     when shown a working prototype.
+  1. **Match the domain to the founder's lived edge.** Read the FOUNDER
+     PROFILE first. What's a domain *this specific person* has shipped
+     deeply in or felt acute pain in? Propose into THAT space whenever
+     reasonable — the evaluator routinely kills ideas where the founder
+     "hasn't lived the problem," so picking a domain with edge is the
+     single biggest score improvement you can make.
+  2. **Recognize the underlying shift.** Tech signal + adjacent items
+     — what's actually changing? What capability is becoming possible
+     *now* that wasn't 12-24 months ago?
+  3. **Identify the gap.** Cross-reference saturation, killed attempts,
+     and failure parallels. What's *underserved* — a real pain RIGHT
+     NOW that this new capability makes solvable for the first time,
+     that nobody is correctly attacking yet?
+  4. **DESIGN THE MOAT FIRST, before writing the idea.** Read the
+     RECENT KILL PATTERNS below — the evaluator has been killing nearly
+     every recent idea on the same axes (thin moat, hyperscaler clone
+     risk, "feature not company"). You must design defensibility
+     explicitly and upfront. Name the specific lock-in: a data network
+     effect that compounds with use, integration depth in a regulated
+     workflow, proprietary domain data, distribution lock, switching
+     cost, regulated-trust requirement. Score that moat 1–10.
+     **If the moat scores below 6, PIVOT the angle** — tighter wedge,
+     deeper integration, more specific niche — until the moat is 6+.
+     "First-mover advantage" and "we ship faster" are NOT moats.
+  5. **Then propose the idea** — narrow enough to ship in 8 weeks,
+     specific enough that a real person would say "yes I'd pay for
+     that" when shown a working prototype.
+
+──────── FOUNDER PROFILE — match ideas to this person's lived edge ────────
+{founder_block}
 
 ──────── NEW TECH SIGNAL ────────
 {tech_block}
@@ -88,31 +109,38 @@ these into an idea — it is to:
 ──────── PRIOR KILLED ATTEMPTS in this space — don't repeat ────────
 {killed_block}
 
+──────── RECENT KILL PATTERNS — design AROUND these ────────
+{kill_patterns_block}
+
 ──────── FAILURE PARALLELS (post-mortems of similar attempts) ────────
 {failure_block}
 
-Return ONLY a JSON object (no other text). The first three fields force
-you to *think* before proposing — fill them honestly, not as marketing
-copy:
+Return ONLY a JSON object (no other text). The structure forces you to
+match founder-fit, design moat, then propose — fill these honestly, not
+as marketing copy:
 
 {{
-  "pattern_recognized": "<2-3 sentences: what shift is actually happening across the tech signal + adjacent items? What's becoming possible NOW?>",
-  "gap_identified": "<2-3 sentences: who is hurting right now in a way this new capability can address? Why is nobody correctly attacking it yet? Be specific about the underserved corner.>",
-  "failure_pattern_avoided": "<1-2 sentences: cite a specific failed attempt from the parallels above by name, name the pattern that killed it, and state how your idea sidesteps that pattern.>",
+  "pattern_recognized": "<2-3 sentences: what shift is happening across the tech signal + adjacent items? What's becoming possible NOW?>",
+  "gap_identified": "<2-3 sentences: who is hurting now in a way this new capability addresses? Why is nobody correctly attacking it? Be specific.>",
+  "founder_fit": "<2 sentences: which lived pain or edge domain from the FOUNDER PROFILE does this map to? Quote a specific bullet. If it doesn't clearly map, REVISE the angle before submitting.>",
+  "moat_design": "<3-4 sentences: the SPECIFIC defensibility against a hyperscaler / well-funded competitor cloning this in 18 months. Name the lock-in (data network effect, integration depth in a regulated workflow, proprietary data, distribution lock, switching cost, regulated-trust requirement). Be concrete — 'first-mover advantage' is NOT a moat.>",
+  "moat_score": <integer 1-10: rate the moat you just designed. If below 6, PIVOT THE ANGLE before submitting — do not return moat_score below 6 except as an honest signal that the input space has no defensible idea>,
+  "failure_pattern_avoided": "<1-2 sentences: cite a specific failed attempt from the parallels above by name, name the pattern that killed it, state how your idea sidesteps that pattern.>",
   "idea": "<one-sentence pitch in the form: 'X for Y who Z'>",
   "tech_basis": "<the new tech this leverages>",
   "pain_basis": "<the specific pain it solves>",
   "wedge": "<the narrow first-customer profile you'd target>",
   "key_assumption": "<the riskiest belief that must be true>",
   "validation_step": "<one cheap experiment to test that assumption in 7 days>",
-  "why_now": "<what changed in the last 12 months that makes this possible NOW (cite the tech signal or an adjacent item if you can)>",
+  "why_now": "<what changed in the last 12 months that makes this possible NOW (cite the tech signal or an adjacent item)>",
   "differentiation": "<how this differs from the killed attempts and current saturation — be specific about which competitor's gap you're attacking>"
 }}
 
 Be specific. Avoid 'platform', 'ecosystem', 'comprehensive', 'leverage',
 'AI-powered'. A vague idea is worse than no idea. If the input doesn't
-actually contain a real gap, say so honestly in `gap_identified` — but
-still propose your best attempt. The evaluator can judge the rest."""
+contain a real gap the founder can attack with edge, say so honestly in
+`gap_identified` and `founder_fit` — but still propose your best attempt
+with an honest low `moat_score` so the evaluator sees the structural risk."""
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -328,6 +356,76 @@ def _format_failure_block(parallels: list[tuple[str, str]]) -> str:
     for title, body in parallels:
         chunks.append(f"▸ {title}\n{body}")
     return "\n\n".join(chunks)
+
+
+# ─── Founder-fit + cross-run kill-pattern feedback ──────────────────────
+
+
+def _format_founder_block(profile: str) -> str:
+    """Render the founder profile for the prompt — clip if huge."""
+    profile = (profile or "").strip()
+    if not profile:
+        return (
+            "(no founder profile — propose conservatively; edit "
+            "src/ai_intel/founder/profile.md or ~/.jarvis/founder_profile.md "
+            "to give the proposer this founder's lived edge)"
+        )
+    # Profile is typically <4 KB; cap to keep prompt budget sane.
+    return profile[:6000]
+
+
+def _recent_kill_patterns(
+    engine,
+    *,
+    lookback: int = 15,
+    top_n: int = 5,
+) -> list[str]:
+    """Pull the worst (lowest-subscore) ``kill_criterion`` text from
+    recent killed / needs_work / borderline candidates so the proposer
+    learns *across runs* what the evaluator keeps killing on. Turns
+    one-shot ideation into a system that gets less wrong over time."""
+    with Session(engine) as s:
+        rows = list(s.exec(
+            select(IdeaCandidate.persona_critiques_json)
+            .where(IdeaCandidate.status.in_(["killed", "needs_work", "borderline"]))
+            .order_by(desc(IdeaCandidate.proposed_at))
+            .limit(lookback)
+        ))
+    out: list[str] = []
+    for raw in rows:
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        # Persona critiques sit beside the _proposer_detail key.
+        critiques = {
+            k: v for k, v in data.items()
+            if k != "_proposer_detail" and isinstance(v, dict)
+        }
+        if not critiques:
+            continue
+        # The vetoer is the persona with the lowest subscore — their
+        # kill_criterion is what actually sank the idea.
+        worst = min(critiques.items(), key=lambda kv: kv[1].get("subscore", 100))
+        kill = ((worst[1] or {}).get("kill_criterion") or "").strip()
+        if kill:
+            out.append(kill[:220])
+        if len(out) >= top_n:
+            break
+    return out
+
+
+def _format_kill_patterns_block(patterns: list[str]) -> str:
+    if not patterns:
+        return (
+            "(no recent kill patterns yet — system is warming up; "
+            "evaluator hasn't built up dissent history to learn from)"
+        )
+    return "\n".join(f"- {p}" for p in patterns)
 
 
 # ─── Synthesizer-trend wiring ───────────────────────────────────────────
@@ -777,7 +875,13 @@ async def proposer(
 
     failure_parallels = _failure_parallels(engine, seed_q, k=2)
 
+    founder_block = _format_founder_block(load_founder_profile())
+    kill_patterns_block = _format_kill_patterns_block(
+        _recent_kill_patterns(engine, lookback=15, top_n=5)
+    )
+
     prompt = PROPOSER_PROMPT.format(
+        founder_block=founder_block,
         tech_block=adjacent_block_text,
         adjacent_block=secondary_adjacent_text,
         saturation_block=saturation_block_text,
@@ -786,6 +890,7 @@ async def proposer(
         persona_block=persona_text,
         essays_block=_format_essays_block(essay_passages),
         killed_block=_format_killed_block(killed),
+        kill_patterns_block=kill_patterns_block,
         failure_block=_format_failure_block(failure_parallels),
     )
 
@@ -828,11 +933,14 @@ async def proposer(
         # since IdeaCandidate doesn't have dedicated fields for wedge etc.
         persona_critiques_json=json.dumps({
             "_proposer_detail": {
-                # Entrepreneurial reasoning chain (new in Stage 3) — these
-                # three fields capture the proposer's THOUGHT before its
-                # proposal. Empty strings if the model skipped them.
+                # Entrepreneurial reasoning chain — captures the
+                # proposer's THOUGHT before its proposal. Empty strings
+                # if the model skipped a field.
                 "pattern_recognized": parsed.get("pattern_recognized", ""),
                 "gap_identified": parsed.get("gap_identified", ""),
+                "founder_fit": parsed.get("founder_fit", ""),
+                "moat_design": parsed.get("moat_design", ""),
+                "moat_score": parsed.get("moat_score"),
                 "failure_pattern_avoided": parsed.get("failure_pattern_avoided", ""),
                 # Proposal artifacts
                 "wedge": parsed.get("wedge", ""),

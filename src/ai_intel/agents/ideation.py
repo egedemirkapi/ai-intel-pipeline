@@ -30,6 +30,52 @@ from ai_intel.personas import KNOWN_PERSONAS
 logger = logging.getLogger(__name__)
 
 
+def _persona_usage_counts(engine, lookback: int = 30) -> dict[str, int]:
+    """Count how many of the last ``lookback`` IdeaCandidates were
+    proposed by each persona. Used to bias rotation toward
+    least-recently-used, fixing the bug where
+    ``personas[i % len(personas)]`` always picked ``personas[0]`` when
+    ``n_candidates=1`` across many separate ``weekly_ideation`` calls."""
+    counts: dict[str, int] = {}
+    with Session(engine) as s:
+        rows = list(s.exec(
+            select(IdeaCandidate.persona_critiques_json)
+            .order_by(desc(IdeaCandidate.proposed_at))
+            .limit(lookback)
+        ))
+    for raw in rows:
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        p = (data.get("_proposer_detail") or {}).get("persona_used")
+        if isinstance(p, str) and p:
+            counts[p] = counts.get(p, 0) + 1
+    return counts
+
+
+def _rotate_personas(engine, personas: list[str], n: int) -> list[str]:
+    """Pick ``n`` personas, biasing toward those used LEAST in recent runs.
+
+    Sorts the persona list by recent usage count ascending (ties broken
+    by persona-list order for determinism). With ``n_candidates=1``,
+    separate ``weekly_ideation`` invocations will pick different
+    personas because the previous run's pick is now in the recent-usage
+    tally.
+    """
+    counts = _persona_usage_counts(engine)
+    order_idx = {p: i for i, p in enumerate(personas)}
+    sorted_personas = sorted(
+        personas,
+        key=lambda p: (counts.get(p, 0), order_idx[p]),
+    )
+    return [sorted_personas[i % len(sorted_personas)] for i in range(n)]
+
+
 @agent("weekly_ideation")
 async def weekly_ideation(
     engine,
@@ -61,10 +107,13 @@ async def weekly_ideation(
     trend_calls = 0
     single_item_calls = 0
 
-    personas = list(KNOWN_PERSONAS)
+    if rotate_personas:
+        pids = _rotate_personas(engine, list(KNOWN_PERSONAS), n_candidates)
+    else:
+        pids = ["paul_graham"] * n_candidates
 
     for i in range(n_candidates):
-        pid = personas[i % len(personas)] if rotate_personas else "paul_graham"
+        pid = pids[i]
         # Pick a fresh trend per iteration so the cycle covers a variety of
         # meta-patterns when many active trends exist.
         trend = _pick_trend(engine) if use_synthesis else None
