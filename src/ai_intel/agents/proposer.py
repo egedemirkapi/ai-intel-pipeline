@@ -898,7 +898,10 @@ async def proposer(
         [{"role": "user", "content": prompt}],
         prefer="oauth",
         model=model,
-        max_tokens=1400,
+        # 2500 (was 1400): the founder_fit + moat_design + moat_score
+        # fields plus the existing chain push Haiku past 1400 mid-JSON
+        # → the response truncates and _parse_llm_json fails on every run.
+        max_tokens=2500,
         temperature=0.8,  # encourage exploration
     )
 
