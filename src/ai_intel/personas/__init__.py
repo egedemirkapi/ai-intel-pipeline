@@ -10,6 +10,13 @@ from __future__ import annotations
 from pathlib import Path
 
 # Persona ids match the markdown filenames (without .md).
+#
+# The first six are validation-VC voices — they critique a proposed
+# idea for execution risk, wedge plausibility, founder-market fit.
+# The last three (added 2026-05 with idea-finder v2) are
+# market-creator voices — they push for big markets, scale economics,
+# behavior-change products. Together they keep the proposer from
+# converging on narrow niches.
 KNOWN_PERSONAS: tuple[str, ...] = (
     "paul_graham",
     "sam_altman",
@@ -17,6 +24,10 @@ KNOWN_PERSONAS: tuple[str, ...] = (
     "alex_hormozi",
     "a16z",
     "yc_partner",
+    # Market-creator personas (idea-finder v2):
+    "marc_andreessen",
+    "patrick_collison",
+    "brian_chesky",
 )
 
 _PACKAGE_DIR = Path(__file__).parent
