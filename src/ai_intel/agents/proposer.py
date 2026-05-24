@@ -24,7 +24,9 @@ import logging
 import random
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote
 
+import httpx
 from sqlmodel import Session, select
 
 from ai_intel.agents.decorator import agent
@@ -71,14 +73,18 @@ startups nearby. Your job — in this order:
      will get killed — the market-creator personas are looking for
      billion-dollar opportunities. Wedge into a BILLION-dollar market.
 
-  3. **Find the orthogonal angle if the market is saturated.** Saturated
-     markets are where winners emerge: Stripe entered saturated payments,
-     Anthropic entered saturated LLMs, Linear entered saturated project
-     management, Perplexity entered saturated search. Read MARKET
-     SATURATION carefully. If the market is crowded, EXPLICITLY name
-     the dominant angle (who/how incumbents play), then identify the
-     ORTHOGONAL angle nobody is taking. "Saturated" is a feature, not
-     a kill criterion — but only if you can name the unattacked angle.
+  3. **Find the orthogonal angle if the market is saturated.** Read
+     BOTH the MARKET SATURATION block AND the INCUMBENT LANDSCAPE
+     block (a LIVE web search of real products in this space — names,
+     URLs, snippets). Saturated markets are where winners emerge:
+     Stripe entered saturated payments, Anthropic entered saturated
+     LLMs, Linear entered saturated project management, Perplexity
+     entered saturated search. If the market is crowded, EXPLICITLY
+     name the dominant angle — cite specific products from INCUMBENT
+     LANDSCAPE by name — then identify the ORTHOGONAL angle nobody is
+     taking. "Saturated" is a feature, not a kill criterion — but only
+     if (a) you can name 3+ specific incumbents from the live data,
+     and (b) you can prove they don't already cover your angle.
 
   4. **Find the WINNER analog.** Look at the CASE STUDIES below. Which
      specific company's playbook does your idea echo? Stripe's
@@ -124,6 +130,9 @@ startups nearby. Your job — in this order:
 ──────── MARKET SATURATION (use as context for the orthogonal-angle test) ────────
 {saturation_block}
 
+──────── INCUMBENT LANDSCAPE (LIVE web search of existing products in this space) ────────
+{incumbent_landscape_block}
+
 ──────── USER PAIN ────────
 {pain_block}
 
@@ -167,7 +176,7 @@ behavior change BEFORE you propose. Fill honestly, not as marketing copy:
   "key_assumption": "<the riskiest belief that must be true>",
   "validation_step": "<one cheap experiment to test that assumption in 7 days>",
   "why_now": "<what changed in the last 12 months that makes this possible NOW (cite the tech signal or an adjacent item)>",
-  "differentiation": "<how this differs from the killed attempts and current saturation — name the 10× dimension. Not 2× faster, not 30% cheaper — the SPECIFIC step-change axis (e.g. 'integration time minutes vs weeks' like Stripe; 'always-multiplayer' like Figma; 'orthogonal answer-shape' like Perplexity).>"
+  "differentiation": "<MUST start with naming 3+ SPECIFIC competitor PRODUCTS from the INCUMBENT LANDSCAPE above (by product name + one-line position each, e.g. 'vs LiteLLM (open-source proxy, lacks deterministic replay): we add ... ; vs OpenRouter (commercial gateway, no agentic state-awareness): we ... ; vs Helicone (observability-first, not orchestration): we ...'). If INCUMBENT LANDSCAPE shows products that already do EXACTLY what you're proposing, this is structurally killed — PIVOT to a space they don't address, or say 'incumbents already cover this — pivoting' here. After naming incumbents, name the 10× step-change axis vs them (not 2× faster, not 30% cheaper — the structural difference, e.g. 'integration time minutes vs weeks' like Stripe; 'always-multiplayer' like Figma; 'orthogonal answer-shape' like Perplexity).>"
 }}
 
 Be specific. Avoid 'platform', 'ecosystem', 'comprehensive', 'leverage',
@@ -515,6 +524,84 @@ def _format_kill_patterns_block(patterns: list[str]) -> str:
             "evaluator hasn't built up dissent history to learn from)"
         )
     return "\n".join(f"- {p}" for p in patterns)
+
+
+# ─── Live incumbent landscape — real-time saturation check ──────────────
+#
+# The saturator scores the trend topic, not the idea space the proposer
+# pivots to. So historically the proposer could draft "multi-model
+# routing for agents" against a "frontier model consolidation" trend
+# and never see that LiteLLM / OpenRouter / Helicone / Portkey already
+# own that space. This wires a live DuckDuckGo search into the proposer
+# so it sees actual products BEFORE drafting differentiation.
+
+_DDG_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+
+async def _search_incumbents(query: str, k: int = 6) -> list[dict[str, str]]:
+    """Live web search for incumbent products in this idea space.
+
+    Hits DuckDuckGo HTML and parses 5-6 organic results. Returns a list
+    of ``{title, url, snippet}`` dicts. Returns an empty list on failure;
+    the proposer's prompt handles that gracefully by telling the LLM to
+    fall back to training-time priors AND say so honestly in the
+    ``differentiation`` field.
+    """
+    try:
+        async with httpx.AsyncClient(
+            timeout=10.0, follow_redirects=True,
+            headers={"User-Agent": _DDG_UA},
+        ) as client:
+            r = await client.post(
+                "https://html.duckduckgo.com/html/", data={"q": query},
+            )
+            r.raise_for_status()
+    except Exception as exc:  # noqa: BLE001 — search is best-effort
+        logger.warning(
+            "incumbent search failed (%s) — proceeding without live data", exc,
+        )
+        return []
+
+    pattern = re.compile(
+        r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.+?)</a>'
+        r'.*?<a[^>]+class="result__snippet"[^>]*>(.+?)</a>',
+        re.DOTALL,
+    )
+    results: list[dict[str, str]] = []
+    for m in pattern.finditer(r.text):
+        url, title_html, snippet_html = m.group(1), m.group(2), m.group(3)
+        # DuckDuckGo wraps outbound links via /l/?uddg=<encoded URL>
+        uddg = re.search(r"uddg=([^&]+)", url)
+        if uddg:
+            url = unquote(uddg.group(1))
+        title = html.unescape(re.sub(r"<[^>]+>", "", title_html)).strip()
+        snippet = html.unescape(re.sub(r"<[^>]+>", "", snippet_html)).strip()
+        results.append({
+            "title": title[:140],
+            "url": url[:240],
+            "snippet": snippet[:260],
+        })
+        if len(results) >= k:
+            break
+    return results
+
+
+def _format_incumbent_block(results: list[dict[str, str]]) -> str:
+    if not results:
+        return (
+            "(no live incumbent data — search unavailable; reason from "
+            "your training-time knowledge of the space. If you cannot "
+            "name 3+ specific competitor products by name in this exact "
+            "space, say so honestly in `differentiation` and consider "
+            "whether your knowledge is too thin to propose here.)"
+        )
+    chunks = []
+    for r in results:
+        chunks.append(f"- {r['title']}\n    {r['snippet']}\n    {r['url']}")
+    return "\n".join(chunks)
 
 
 # ─── Synthesizer-trend wiring ───────────────────────────────────────────
@@ -982,11 +1069,28 @@ async def proposer(
     )
     success_passages = _recall_success_patterns(engine, seed_q, k=3)
 
+    # Live incumbent search — the proposer needs to KNOW which products
+    # already exist in this space before drafting differentiation, or it
+    # will propose "multi-model routing for agents" against trends about
+    # model consolidation and never realise LiteLLM / OpenRouter own that
+    # niche. Query the trend label (or single-item title) + competitor
+    # keywords; best-effort, graceful on failure.
+    incumbent_search_topic = (
+        trend.cluster_label if using_trend else tech_signal_summary
+    )
+    incumbent_query = (
+        f"{incumbent_search_topic} tools alternatives competitors products 2026"
+    )
+    incumbent_landscape_block = _format_incumbent_block(
+        await _search_incumbents(incumbent_query, k=6)
+    )
+
     prompt = PROPOSER_PROMPT.format(
         founder_block=founder_block,
         tech_block=adjacent_block_text,
         adjacent_block=secondary_adjacent_text,
         saturation_block=saturation_block_text,
+        incumbent_landscape_block=incumbent_landscape_block,
         pain_block=_format_item_block(pain_item, "pain"),
         persona_name=persona_name,
         persona_block=persona_text,
