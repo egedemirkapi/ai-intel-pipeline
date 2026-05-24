@@ -69,6 +69,16 @@ For each trend you identify:
   - Name 0-2 other cluster labels (from your own list) this one
     converges with — where DOES this combine with another shift to
     open a different kind of gap?
+  - Estimate the MARKET SIGNAL — three fields, honest order-of-magnitude:
+    * tam_billions_estimate: a float — your best guess at the TAM in $B
+      if a winner emerges. A narrow niche is 0.5; a smartphone-scale
+      shift is 300+; AI dev-tools is ~30; cloud infra is ~500.
+    * addressable_users_profile: one sentence — who's the buyer/user
+      ("AI infrastructure teams at mid-to-large companies", "every
+      consumer with a smartphone", "PhD students at R1 universities").
+    * natural_distribution: one sentence — how this would naturally
+      reach scale ("Developer WOM + freemium tier", "Enterprise sales
+      via cloud-provider partnerships", "Viral via shareable artifacts").
 
 INTEL ITEMS:
 {items_block}
@@ -82,7 +92,12 @@ Return ONLY a JSON object with this exact shape (no other text):
       "underlying_shift": "<1-2 sentences>",
       "new_capability": "<1 sentence>",
       "momentum": "rising_fast|steady_rising|stable|slowing",
-      "convergence_with": ["<other cluster_label>", ...]
+      "convergence_with": ["<other cluster_label>", ...],
+      "market_signal": {{
+        "tam_billions_estimate": <float>,
+        "addressable_users_profile": "<1 sentence>",
+        "natural_distribution": "<1 sentence>"
+      }}
     }},
     ...
   ]
@@ -162,6 +177,28 @@ def _coerce_trend(raw: dict[str, Any], items: list[Item]) -> dict[str, Any] | No
     convergence = raw.get("convergence_with") or []
     if not isinstance(convergence, list):
         convergence = []
+
+    # Market-signal estimate (idea-finder v2). Honest order-of-magnitude
+    # TAM + who-the-user-is + how-it-distributes. Drops cleanly to None
+    # if the LLM omitted it (older synthesis rows pre-v2).
+    market_signal: dict[str, Any] | None = None
+    raw_ms = raw.get("market_signal")
+    if isinstance(raw_ms, dict):
+        tam_val = raw_ms.get("tam_billions_estimate")
+        try:
+            tam_float = float(tam_val) if tam_val is not None else None
+        except (TypeError, ValueError):
+            tam_float = None
+        market_signal = {
+            "tam_billions_estimate": tam_float,
+            "addressable_users_profile": str(
+                raw_ms.get("addressable_users_profile") or ""
+            ).strip()[:400],
+            "natural_distribution": str(
+                raw_ms.get("natural_distribution") or ""
+            ).strip()[:400],
+        }
+
     return {
         "cluster_label": label[:120],
         "member_item_ids": item_ids,
@@ -169,6 +206,7 @@ def _coerce_trend(raw: dict[str, Any], items: list[Item]) -> dict[str, Any] | No
         "new_capability": (raw.get("new_capability") or "").strip()[:600],
         "momentum": (raw.get("momentum") or "stable").strip()[:32],
         "convergence_with": [str(c).strip()[:120] for c in convergence if c],
+        "market_signal": market_signal,
     }
 
 
@@ -274,6 +312,10 @@ async def synthesizer(
                 new_capability=coerced["new_capability"],
                 momentum=coerced["momentum"],
                 convergence_with_json=json.dumps(coerced["convergence_with"]),
+                market_signal_json=(
+                    json.dumps(coerced["market_signal"])
+                    if coerced.get("market_signal") else None
+                ),
                 raw_llm_json=json.dumps(raw_trend),
                 status="active",
             )

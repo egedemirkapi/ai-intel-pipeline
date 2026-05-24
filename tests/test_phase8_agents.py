@@ -269,23 +269,37 @@ def test_proposer_handles_unparseable_output(engine, embedder, monkeypatch):
     assert len(rows) == 0
 
 
-def test_proposer_refuses_saturated_signal(engine, embedder, monkeypatch):
-    """Explicit tech_signal in a saturated space should be rejected."""
+def test_proposer_accepts_saturated_signal_as_context(engine, embedder, monkeypatch):
+    """Idea-finder v2: saturation is CONTEXT, not a kill gate. Saturated
+    markets are exactly where winners emerge (Stripe in payments,
+    Anthropic in LLMs) — the proposer must still process the signal
+    and design the orthogonal angle in the prompt, not refuse upfront.
+
+    Replaces the old test_proposer_refuses_saturated_signal which
+    tested the gate-based behavior we removed."""
     tech = _seed_item(engine, title="AI customer support agents", source="hn", url="https://example.test/sat")
     embed_pending(engine, embedder=embedder)
     monkeypatch.setattr("ai_intel.memory.embed.get_embedder", lambda: embedder)
     _seed_saturation(engine, tech.title, score=0.85)  # heavily crowded
 
-    with patch("ai_intel.agents.proposer.call_llm") as mock_llm:
+    llm_response = _mock_llm(json.dumps({
+        "idea": "Orthogonal angle for saturated customer-support AI",
+        "tech_basis": "vertical AI agents",
+        "wedge": "an underserved first-100-users segment",
+        "key_assumption": "the orthogonal angle holds",
+        "validation_step": "ship to 5 mid-market teams in 7 days",
+    }))
+    with patch("ai_intel.agents.proposer.call_llm", return_value=llm_response):
         result = asyncio.run(proposer(
-            engine, persona_id="paul_graham",
-            tech_signal=tech,
+            engine, persona_id="paul_graham", tech_signal=tech,
         ))
-    mock_llm.assert_not_called()  # no draft attempted
-    assert "saturated" in result["summary"]
+    # The proposer no longer refuses on saturation; it processes the
+    # signal and lets the saturation block in the prompt carry the
+    # incumbent-density context to the LLM.
+    assert "Orthogonal angle" in result["summary"]
     with Session(engine) as s:
         rows = list(s.exec(select(IdeaCandidate)))
-    assert len(rows) == 0
+    assert len(rows) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +374,10 @@ def test_proposer_writes_idea_candidate_in_trend_mode(engine, embedder, monkeypa
         momentum="rising_fast",
         new_capability="Indie game devs can run frontier-class dialogue locally.",
     )
+    # Idea-finder v2: trend-mode proposer now fetches saturation on the
+    # cluster_label as context (no longer a gate). Pre-seed so the
+    # mocked call_llm path doesn't try to reach the real saturator LLM.
+    _seed_saturation(engine, trend.cluster_label, score=0.4)
 
     llm_response = _mock_llm(json.dumps({
         "pattern_recognized": "MoE landing in consumer-GPU runtimes",
@@ -394,8 +412,10 @@ def test_proposer_writes_idea_candidate_in_trend_mode(engine, embedder, monkeypa
     assert detail["trend_id"] == trend.id
     assert detail["trend_label"] == "Local MoE inference becomes viable"
     assert detail["trend_momentum"] == "rising_fast"
-    # In trend mode, saturation is not invoked — the proposer's
-    # tech_signal_url should fall back to the first member's URL
+    # The proposer's tech_signal_url falls back to the first member's
+    # URL in trend mode. (Saturation IS now invoked in trend mode as
+    # context — we seeded a cached assessment above so no live LLM call
+    # is needed.)
     assert detail["tech_signal_url"] == member.url
 
 
@@ -449,10 +469,11 @@ def test_evaluator_aggregates_persona_subscores_to_escalated(engine):
     assert row.evaluator_score == 85
     assert row.evaluator_verdict == "escalated"
     assert row.status == "escalated"
-    # All 6 personas should have a critique entry
+    # All 9 personas should have a critique entry (6 validation-VC +
+    # 3 market-creator added in idea-finder v2).
     blob = json.loads(row.persona_critiques_json)
     critique_keys = [k for k in blob if k != "_proposer_detail"]
-    assert len(critique_keys) == 6
+    assert len(critique_keys) == 9
 
 
 def test_evaluator_aggregates_to_killed(engine):
@@ -479,9 +500,10 @@ def test_evaluator_aggregates_to_needs_work(engine):
     needs_work."""
     cand = _seed_candidate(engine)
     # All 60s → mean 60, min 60. Min >= veto floor, mean < escalate.
+    # 9 personas now (6 validation-VC + 3 market-creator).
     responses = iter([
         _mock_llm(json.dumps({"subscore": s, "critique": "x", "kill_criterion": "y", "would_fund_or_advise": False}))
-        for s in (60, 60, 60, 60, 60, 60)
+        for s in (60, 60, 60, 60, 60, 60, 60, 60, 60)
     ])
     with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(responses)), \
          patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
@@ -495,15 +517,16 @@ def test_evaluator_aggregates_to_needs_work(engine):
 def test_evaluator_dissent_veto_high_mean_becomes_borderline(engine):
     """Dissent veto + mean ≥ borderline_above (60) → 'borderline', not 'killed'.
 
-    Five enthusiastic 80s + one dissenting 52 → mean 75.3, min 52.
+    Eight enthusiastic 80s + one dissenting 53 → mean 77, min 53.
     Without the veto rule this would escalate; with the rule alone it would
     kill; with the borderline tier on top, it lands in 'borderline' so the
-    user can review the critique without an outright kill.
+    user can review the critique without an outright kill. (9 personas
+    now — 6 validation-VC + 3 market-creator from idea-finder v2.)
     """
     cand = _seed_candidate(engine)
     responses = iter([
         _mock_llm(json.dumps({"subscore": s, "critique": "x", "kill_criterion": "k", "would_fund_or_advise": False}))
-        for s in (80, 80, 80, 80, 80, 52)
+        for s in (80, 80, 80, 80, 80, 80, 80, 80, 53)
     ])
     with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(responses)), \
          patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
@@ -511,21 +534,21 @@ def test_evaluator_dissent_veto_high_mean_becomes_borderline(engine):
     with Session(engine) as s:
         row = s.get(IdeaCandidate, cand.id)
     assert row.evaluator_verdict == "borderline"
-    # Score still computed as mean
-    assert row.evaluator_score == 75
+    # Score still computed as mean: (8*80 + 53)/9 = 77.0 → 77
+    assert row.evaluator_score == 77
 
 
 def test_evaluator_dissent_veto_low_mean_still_kills(engine):
     """Dissent veto AND mean < borderline_above (60) → 'killed'.
 
-    Three middling 60s + three dissenting 38s → mean 49, min 38.
-    Multiple critics independently scored low → the mean itself is mediocre
-    → no borderline rescue applies.
+    Five middling 60s + four dissenting 38s → mean 50, min 38.
+    Multiple critics independently scored low → the mean itself is
+    mediocre → no borderline rescue applies. (9 personas now.)
     """
     cand = _seed_candidate(engine)
     responses = iter([
         _mock_llm(json.dumps({"subscore": s, "critique": "x", "kill_criterion": "k", "would_fund_or_advise": False}))
-        for s in (60, 60, 60, 38, 38, 38)
+        for s in (60, 60, 60, 60, 60, 38, 38, 38, 38)
     ])
     with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(responses)), \
          patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
@@ -533,7 +556,8 @@ def test_evaluator_dissent_veto_low_mean_still_kills(engine):
     with Session(engine) as s:
         row = s.get(IdeaCandidate, cand.id)
     assert row.evaluator_verdict == "killed"
-    assert row.evaluator_score == 49
+    # (5*60 + 4*38)/9 = (300+152)/9 = 50.22 → 50
+    assert row.evaluator_score == 50
 
 
 def test_evaluator_does_nothing_when_no_pending(engine):
@@ -545,15 +569,17 @@ def test_evaluator_does_nothing_when_no_pending(engine):
 
 
 def test_evaluator_handles_partial_persona_failures(engine):
-    """If 5 of 6 personas return garbage but 1 parses, still aggregate."""
+    """If 8 of 9 personas return garbage but 1 parses, still aggregate.
+    (9 personas now — 6 validation-VC + 3 market-creator from
+    idea-finder v2.)"""
     cand = _seed_candidate(engine)
     good = _mock_llm(json.dumps({
         "subscore": 60, "critique": "ok", "kill_criterion": "none",
         "would_fund_or_advise": False,
     }))
     bad = _mock_llm("not parseable json")
-    # Cycle: good, then 5 bad
-    seq = iter([good, bad, bad, bad, bad, bad])
+    # Cycle: good, then 8 bad
+    seq = iter([good, bad, bad, bad, bad, bad, bad, bad, bad])
     with patch("ai_intel.agents.evaluator.call_llm", side_effect=lambda *a, **kw: next(seq)), \
          patch("ai_intel.agents.evaluator.time.sleep", lambda *a, **kw: None):
         asyncio.run(evaluator(engine, candidate_id=cand.id))

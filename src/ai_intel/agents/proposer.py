@@ -49,41 +49,68 @@ You've watched dozens of startups die — you know the failure patterns by
 heart. You've internalized {persona_name}'s mental models so deeply they
 feel like your own intuitions. You don't brainstorm random ideas. You
 hunt for the *specific gap* a shift in the ecosystem just opened, in a
-domain where YOU — the founder profiled below — actually have edge.
+domain where YOU — the founder profiled below — actually have edge, with
+a wedge into a market that can grow to BILLIONS of dollars.
 
-You will be shown the founder's lived edge, one new tech signal, adjacent
-items, saturation, a current user pain, founder essay excerpts, prior
-kill attempts in this space, RECENT KILL PATTERNS the evaluator has been
-hammering on across recent runs, and post-mortems of failed startups
-nearby. Your job — in this order:
+You will be shown: the founder's lived edge, a tech signal, adjacent
+items, MARKET SATURATION, a user pain, founder essay excerpts, CASE
+STUDIES of how WINNERS thought (Stripe, Anthropic, Notion, Cursor, etc.
+— cite them by name), prior kill attempts in this space, RECENT KILL
+PATTERNS the evaluator has been hammering on, and post-mortems of failed
+startups nearby. Your job — in this order:
 
   1. **Match the domain to the founder's lived edge.** Read the FOUNDER
-     PROFILE first. What's a domain *this specific person* has shipped
-     deeply in or felt acute pain in? Propose into THAT space whenever
-     reasonable — the evaluator routinely kills ideas where the founder
-     "hasn't lived the problem," so picking a domain with edge is the
+     PROFILE first. The evaluator routinely kills ideas where the founder
+     hasn't lived the problem, so picking a domain with edge is the
      single biggest score improvement you can make.
-  2. **Recognize the underlying shift.** Tech signal + adjacent items
-     — what's actually changing? What capability is becoming possible
-     *now* that wasn't 12-24 months ago?
-  3. **Identify the gap.** Cross-reference saturation, killed attempts,
-     and failure parallels. What's *underserved* — a real pain RIGHT
-     NOW that this new capability makes solvable for the first time,
-     that nobody is correctly attacking yet?
-  4. **DESIGN THE MOAT FIRST, before writing the idea.** Read the
-     RECENT KILL PATTERNS below — the evaluator has been killing nearly
-     every recent idea on the same axes (thin moat, hyperscaler clone
-     risk, "feature not company"). You must design defensibility
-     explicitly and upfront. Name the specific lock-in: a data network
-     effect that compounds with use, integration depth in a regulated
-     workflow, proprietary domain data, distribution lock, switching
-     cost, regulated-trust requirement. Score that moat 1–10.
-     **If the moat scores below 6, PIVOT the angle** — tighter wedge,
-     deeper integration, more specific niche — until the moat is 6+.
+
+  2. **Recognize the underlying shift + the market scale it opens.**
+     Tech signal + adjacent items — what's actually changing? AND what
+     is the TAM scale of the market this shift opens: $10M, $100M,
+     $1B+, $10B+, $100B+? Niche-shaped ideas with $10-100M ceilings
+     will get killed — the market-creator personas are looking for
+     billion-dollar opportunities. Wedge into a BILLION-dollar market.
+
+  3. **Find the orthogonal angle if the market is saturated.** Saturated
+     markets are where winners emerge: Stripe entered saturated payments,
+     Anthropic entered saturated LLMs, Linear entered saturated project
+     management, Perplexity entered saturated search. Read MARKET
+     SATURATION carefully. If the market is crowded, EXPLICITLY name
+     the dominant angle (who/how incumbents play), then identify the
+     ORTHOGONAL angle nobody is taking. "Saturated" is a feature, not
+     a kill criterion — but only if you can name the unattacked angle.
+
+  4. **Find the WINNER analog.** Look at the CASE STUDIES below. Which
+     specific company's playbook does your idea echo? Stripe's
+     developer-API wedge into a saturated market? Anthropic's
+     safety-as-differentiation positioning? Notion's bottom-up
+     consumer-in-B2B distribution? Figma's always-multiplayer wedge?
+     Cite a specific case-study company by name in `success_pattern_echoed`.
+     If you can't name a winner whose playbook fits, the angle is wrong.
+
+  5. **DESIGN THE MOAT FIRST, before writing the idea.** Read the RECENT
+     KILL PATTERNS below — the evaluator keeps killing on thin moat /
+     hyperscaler clone risk. Design defensibility explicitly: data
+     network effect that compounds with use, integration depth in a
+     regulated workflow, proprietary domain data, distribution lock,
+     switching cost, regulated-trust requirement. Score the moat 1–10.
+     **If the moat scores below 6, PIVOT the angle** until it's 6+.
      "First-mover advantage" and "we ship faster" are NOT moats.
-  5. **Then propose the idea** — narrow enough to ship in 8 weeks,
-     specific enough that a real person would say "yes I'd pay for
-     that" when shown a working prototype.
+
+  6. **Design the distribution path.** How do the first 10K users
+     *actually arrive*? Viral / developer word-of-mouth / sales-led /
+     API embed into existing pipes / freemium funnel / community-led?
+     Hyperscaler-clone risk is mitigated by distribution lock, not
+     feature parity — pick a path that compounds.
+
+  7. **Articulate the behavior change.** What new behavior does this
+     enable that wasn't possible before? Airbnb wasn't a website — it
+     was *permission to sleep in a stranger's home*. ChatGPT wasn't a
+     chatbot — it was *useful conversation about anything*. Name the
+     behavior unlock. If there isn't one, the idea is incremental.
+
+  8. **Then propose the idea** — wedge that ships in 8 weeks but with a
+     credible path to a $1B+ market and the moat to defend it.
 
 ──────── FOUNDER PROFILE — match ideas to this person's lived edge ────────
 {founder_block}
@@ -94,7 +121,7 @@ nearby. Your job — in this order:
 ──────── ADJACENT TECH (other recent items in this space) ────────
 {adjacent_block}
 
-──────── SATURATION OF THIS SPACE ────────
+──────── MARKET SATURATION (use as context for the orthogonal-angle test) ────────
 {saturation_block}
 
 ──────── USER PAIN ────────
@@ -106,6 +133,9 @@ nearby. Your job — in this order:
 ──────── RELEVANT FOUNDER ESSAYS (real excerpts, not just titles) ────────
 {essays_block}
 
+──────── CASE STUDIES — how WINNERS thought (cite by name) ────────
+{success_block}
+
 ──────── PRIOR KILLED ATTEMPTS in this space — don't repeat ────────
 {killed_block}
 
@@ -116,31 +146,37 @@ nearby. Your job — in this order:
 {failure_block}
 
 Return ONLY a JSON object (no other text). The structure forces you to
-match founder-fit, design moat, then propose — fill these honestly, not
-as marketing copy:
+think through founder-fit → market scale → moat → distribution →
+behavior change BEFORE you propose. Fill honestly, not as marketing copy:
 
 {{
   "pattern_recognized": "<2-3 sentences: what shift is happening across the tech signal + adjacent items? What's becoming possible NOW?>",
-  "gap_identified": "<2-3 sentences: who is hurting now in a way this new capability addresses? Why is nobody correctly attacking it? Be specific.>",
-  "founder_fit": "<2 sentences: which lived pain or edge domain from the FOUNDER PROFILE does this map to? Quote a specific bullet. If it doesn't clearly map, REVISE the angle before submitting.>",
+  "gap_identified": "<2-3 sentences: who is hurting now in a way this new capability addresses? Why is nobody correctly attacking it?>",
+  "founder_fit": "<2 sentences: which lived pain or edge domain from the FOUNDER PROFILE does this map to? Quote a specific bullet. If it doesn't clearly map, REVISE before submitting.>",
+  "tam_signal": "<one of: $10M | $100M | $1B | $10B | $100B+ — followed by one sentence: what's the realistic ceiling assuming you win the wedge? Not the dream — the actual ceiling.>",
+  "behavior_change_unlock": "<1-2 sentences: what new user behavior does this enable that wasn't possible before? If there isn't one (it's an incremental feature), say so honestly.>",
   "moat_design": "<3-4 sentences: the SPECIFIC defensibility against a hyperscaler / well-funded competitor cloning this in 18 months. Name the lock-in (data network effect, integration depth in a regulated workflow, proprietary data, distribution lock, switching cost, regulated-trust requirement). Be concrete — 'first-mover advantage' is NOT a moat.>",
   "moat_score": <integer 1-10: rate the moat you just designed. If below 6, PIVOT THE ANGLE before submitting — do not return moat_score below 6 except as an honest signal that the input space has no defensible idea>,
+  "distribution_path": "<2-3 sentences: how do the first 10K users actually arrive? Viral / dev-WOM / sales-led / API embed / freemium / community-led. Be specific — 'organic marketing' is not a distribution path; 'design-team Twitter showcase virality the way Figma had' is.>",
+  "success_pattern_echoed": "<one company from the CASE STUDIES above, by name, plus one sentence on which playbook element you're echoing — e.g. 'Stripe: developer-API wedge into a saturated market'. If you can't name a winner whose playbook fits, the angle is wrong.>",
   "failure_pattern_avoided": "<1-2 sentences: cite a specific failed attempt from the parallels above by name, name the pattern that killed it, state how your idea sidesteps that pattern.>",
   "idea": "<one-sentence pitch in the form: 'X for Y who Z'>",
   "tech_basis": "<the new tech this leverages>",
   "pain_basis": "<the specific pain it solves>",
-  "wedge": "<the narrow first-customer profile you'd target>",
+  "wedge": "<the narrow first-100-users profile — but wedge ≠ niche. The wedge is the FIRST 100 users; the market it grows into is the $1B+ TAM. Stripe's wedge was YC startups; the market was global payments.>",
   "key_assumption": "<the riskiest belief that must be true>",
   "validation_step": "<one cheap experiment to test that assumption in 7 days>",
   "why_now": "<what changed in the last 12 months that makes this possible NOW (cite the tech signal or an adjacent item)>",
-  "differentiation": "<how this differs from the killed attempts and current saturation — be specific about which competitor's gap you're attacking>"
+  "differentiation": "<how this differs from the killed attempts and current saturation — name the 10× dimension. Not 2× faster, not 30% cheaper — the SPECIFIC step-change axis (e.g. 'integration time minutes vs weeks' like Stripe; 'always-multiplayer' like Figma; 'orthogonal answer-shape' like Perplexity).>"
 }}
 
 Be specific. Avoid 'platform', 'ecosystem', 'comprehensive', 'leverage',
 'AI-powered'. A vague idea is worse than no idea. If the input doesn't
-contain a real gap the founder can attack with edge, say so honestly in
-`gap_identified` and `founder_fit` — but still propose your best attempt
-with an honest low `moat_score` so the evaluator sees the structural risk."""
+contain a real gap the founder can attack with edge + a credible
+billion-dollar market, say so honestly in `gap_identified`,
+`founder_fit`, and `tam_signal` — but still propose your best attempt
+with an honest low `moat_score` so the evaluator sees the structural
+risk."""
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -236,7 +272,10 @@ def _recall_adjacent_tech(
             item = s.get(Item, h.id)
             if item is None or item.url in seen_urls:
                 continue
-            if item.source in ("founder_brain", "pain_source", "failure_corpus"):
+            if item.source in (
+                "founder_brain", "pain_source", "failure_corpus",
+                "success_corpus",
+            ):
                 continue
             seen_urls.add(item.url)
             out.append(item)
@@ -354,6 +393,56 @@ def _format_failure_block(parallels: list[tuple[str, str]]) -> str:
         return "(no failure-corpus parallels — corpus may not be ingested yet)"
     chunks = []
     for title, body in parallels:
+        chunks.append(f"▸ {title}\n{body}")
+    return "\n\n".join(chunks)
+
+
+# ─── Success corpus — how winners thought (cite by company name) ────────
+
+
+def _recall_success_patterns(
+    engine,
+    query: str,
+    *,
+    k: int = 3,
+    body_chars: int = 800,
+) -> list[tuple[str, str]]:
+    """Pull case studies from success_corpus — how WINNERS thought.
+
+    Mirrors ``_recall_founder_passages()`` but on ``source='success_corpus'``.
+    Each row is one company's structured case study (Founding insight /
+    Initial wedge / Timing call / Distribution mechanism / 10× moment /
+    Default-status moat). The proposer cites by company name in the
+    ``success_pattern_echoed`` JSON field so the evaluator can see the
+    analog the proposer is pattern-matching to.
+    """
+    hits = recall(
+        engine, query, k=k,
+        source="success_corpus",
+        hit_types=("item",),
+        log_query=False,
+    )
+    out: list[tuple[str, str]] = []
+    with Session(engine) as s:
+        for h in hits:
+            item = s.get(Item, h.id)
+            if item is None:
+                continue
+            body = _clean_body(item.body or "", limit=body_chars)
+            if not body:
+                continue
+            out.append((item.title, body))
+    return out
+
+
+def _format_success_block(passages: list[tuple[str, str]]) -> str:
+    if not passages:
+        return (
+            "(no success_corpus matches yet — corpus may be unindexed; "
+            "run `python -m scripts.ingest_success_stories` to populate)"
+        )
+    chunks = []
+    for title, body in passages:
         chunks.append(f"▸ {title}\n{body}")
     return "\n\n".join(chunks)
 
@@ -489,12 +578,30 @@ def _format_trend_block(trend: TrendSynthesis, members: list[Item]) -> str:
         convergence = json.loads(trend.convergence_with_json or "[]")
     except (json.JSONDecodeError, TypeError):
         convergence = []
+    market_signal: dict | None = None
+    if trend.market_signal_json:
+        try:
+            market_signal = json.loads(trend.market_signal_json)
+        except (json.JSONDecodeError, TypeError):
+            market_signal = None
     lines = [
         f"TREND: {trend.cluster_label}",
         f"MOMENTUM: {trend.momentum or 'stable'}  (cluster of {len(members)} items)",
         f"UNDERLYING SHIFT: {trend.underlying_shift or '(unspecified)'}",
         f"NEW CAPABILITY UNLOCKED: {trend.new_capability or '(unspecified)'}",
     ]
+    if market_signal:
+        tam = market_signal.get("tam_billions_estimate")
+        if isinstance(tam, (int, float)):
+            tam_str = f"${tam:.1f}B"
+        else:
+            tam_str = "(unknown)"
+        users = market_signal.get("addressable_users_profile") or "(unspecified)"
+        dist = market_signal.get("natural_distribution") or "(unspecified)"
+        lines.append(
+            f"MARKET SIGNAL: TAM ~{tam_str} | users: {users} | "
+            f"natural distribution: {dist}"
+        )
     if convergence:
         lines.append("CONVERGES WITH: " + ", ".join(str(c) for c in convergence))
     if members:
@@ -660,6 +767,7 @@ def _pick_tech_signal(engine, days_back: int = 14) -> Item | None:
             .where(Item.source != "pain_source")
             .where(Item.source != "founder_brain")
             .where(Item.source != "failure_corpus")
+            .where(Item.source != "success_corpus")
             .where(Item.classification.is_not(None))
             .where(Item.entities_json.is_not(None))
             .limit(300)
@@ -707,6 +815,8 @@ def _pick_tech_signal_recency(engine, days_back: int = 7) -> Item | None:
             .where(Item.collected_at >= cutoff)
             .where(Item.source != "pain_source")
             .where(Item.source != "founder_brain")
+            .where(Item.source != "failure_corpus")
+            .where(Item.source != "success_corpus")
             .where(Item.classification.is_not(None))  # noqa: E711
             .order_by(desc(Item.ai_relevance), desc(Item.collected_at))
             .limit(50)
@@ -799,36 +909,25 @@ async def proposer(
         )
     elif tech_signal is not None:
         tech = tech_signal
-        # Still check saturation, but don't loop (user picked deliberately)
-        sat = await _saturation_score(engine, tech.title, model=model)
-        if sat is not None and sat > saturation_threshold:
-            return {
-                "summary": (
-                    f"explicit tech_signal {tech.title!r} saturated "
-                    f"({sat:.2f} > {saturation_threshold}) — refusing to propose"
-                ),
-            }
+        # Saturation is now CONTEXT for the prompt, not a kill gate —
+        # saturated markets are where winners actually emerge (Stripe in
+        # payments, Anthropic in LLMs, Linear in project management).
+        # Fetch the SaturationAssessment so the proposer can read it and
+        # design the orthogonal angle when the market is crowded.
+        await _saturation_score(engine, tech.title, model=model)
         tech_signal_summary = tech.title
         tech_signal_url = tech.url
     else:
-        last_sat: float | None = None
-        for _attempt in range(max_tries):
-            candidate = _pick_tech_signal(engine)
-            if candidate is None:
-                break
-            sat = await _saturation_score(engine, candidate.title, model=model)
-            if sat is None or sat <= saturation_threshold:
-                tech = candidate
-                last_sat = sat
-                break
-            last_sat = sat
-        if tech is None:
-            return {
-                "summary": (
-                    f"every tech signal sampled (n={max_tries}) was saturated "
-                    f"(last score {last_sat}) — nothing to propose"
-                ),
-            }
+        candidate = _pick_tech_signal(engine)
+        if candidate is None:
+            return {"summary": "no tech signal available — nothing to propose"}
+        tech = candidate
+        # Saturation is context, not a gate (see comment above). The
+        # saturation_threshold + max_tries parameters are kept in the
+        # signature for backward compatibility but no longer drive
+        # acceptance — the proposer accepts any signal and the prompt
+        # carries the saturation assessment to the LLM.
+        await _saturation_score(engine, tech.title, model=model)
         tech_signal_summary = tech.title
         tech_signal_url = tech.url
 
@@ -859,10 +958,12 @@ async def proposer(
         adjacent_items = trend_members
         adjacent_block_text = _format_trend_block(trend, trend_members)
         secondary_adjacent_text = _format_adjacent_block_for_trend(trend_members)
-        saturation_block_text = (
-            f"(trend mode — synthesizer already filtered for emerging "
-            f"clusters; this trend's momentum is '{trend.momentum or 'stable'}')"
-        )
+        # Saturation in trend mode: fetch the saturator's assessment on the
+        # cluster_label so the proposer can design the orthogonal angle if
+        # the cluster is crowded (most are — agentic AI, frontier models,
+        # and vertical agents are all saturated by definition).
+        await _saturation_score(engine, trend.cluster_label, model=model)
+        saturation_block_text = _saturation_block_text(engine, trend.cluster_label)
         killed = _recent_killed_ideas(engine, trend.cluster_label or "", k=3)
     else:
         adjacent_items = _recall_adjacent_tech(
@@ -879,6 +980,7 @@ async def proposer(
     kill_patterns_block = _format_kill_patterns_block(
         _recent_kill_patterns(engine, lookback=15, top_n=5)
     )
+    success_passages = _recall_success_patterns(engine, seed_q, k=3)
 
     prompt = PROPOSER_PROMPT.format(
         founder_block=founder_block,
@@ -889,6 +991,7 @@ async def proposer(
         persona_name=persona_name,
         persona_block=persona_text,
         essays_block=_format_essays_block(essay_passages),
+        success_block=_format_success_block(success_passages),
         killed_block=_format_killed_block(killed),
         kill_patterns_block=kill_patterns_block,
         failure_block=_format_failure_block(failure_parallels),
@@ -898,10 +1001,12 @@ async def proposer(
         [{"role": "user", "content": prompt}],
         prefer="oauth",
         model=model,
-        # 2500 (was 1400): the founder_fit + moat_design + moat_score
-        # fields plus the existing chain push Haiku past 1400 mid-JSON
-        # → the response truncates and _parse_llm_json fails on every run.
-        max_tokens=2500,
+        # 3000 (was 2500): idea-finder v2 adds tam_signal +
+        # behavior_change_unlock + distribution_path + success_pattern_echoed
+        # to the required JSON, on top of the existing founder_fit + moat
+        # chain. Each new field is ~50-80 output tokens; 3000 gives Haiku
+        # ample room without the truncate-mid-JSON failure we hit at 1400.
+        max_tokens=3000,
         temperature=0.8,  # encourage exploration
     )
 
@@ -942,8 +1047,13 @@ async def proposer(
                 "pattern_recognized": parsed.get("pattern_recognized", ""),
                 "gap_identified": parsed.get("gap_identified", ""),
                 "founder_fit": parsed.get("founder_fit", ""),
+                # Market-creation lens (idea-finder v2: $1B+ thinking).
+                "tam_signal": parsed.get("tam_signal", ""),
+                "behavior_change_unlock": parsed.get("behavior_change_unlock", ""),
                 "moat_design": parsed.get("moat_design", ""),
                 "moat_score": parsed.get("moat_score"),
+                "distribution_path": parsed.get("distribution_path", ""),
+                "success_pattern_echoed": parsed.get("success_pattern_echoed", ""),
                 "failure_pattern_avoided": parsed.get("failure_pattern_avoided", ""),
                 # Proposal artifacts
                 "wedge": parsed.get("wedge", ""),

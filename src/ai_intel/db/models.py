@@ -181,6 +181,14 @@ class TrendSynthesis(SQLModel, table=True):
     new_capability: Optional[str] = None
     momentum: Optional[str] = None  # rising_fast | steady_rising | stable | slowing
     convergence_with_json: Optional[str] = None  # JSON list[str] of other cluster_labels
+    # Market-signal estimate (idea-finder v2): per-trend TAM ceiling +
+    # addressable-users profile + natural-distribution mechanism. The
+    # proposer surfaces this in the TREND CONTEXT block so it wedges
+    # into known-large markets, not narrow niches. JSON shape:
+    # {"tam_billions_estimate": <float>, "addressable_users_profile": <str>,
+    #  "natural_distribution": <str>}. The self-healing _add_missing_columns
+    # migration in init_db() adds this column to existing DBs on startup.
+    market_signal_json: Optional[str] = None
     # Full LLM output for debugging / future schema migration
     raw_llm_json: Optional[str] = None
     status: str = Field(default="active", index=True)
