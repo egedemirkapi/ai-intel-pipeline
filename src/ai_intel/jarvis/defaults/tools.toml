@@ -39,6 +39,7 @@
 "agents.run"               = "allow"   # explicit user request → fire backend agent
 "ideas.list"               = "allow"
 "ideas.show"               = "allow"
+"ideas.refine"             = "allow"   # refine an existing candidate
 "trends.latest"            = "allow"
 "intel.recent"             = "allow"
 

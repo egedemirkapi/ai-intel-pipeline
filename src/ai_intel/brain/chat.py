@@ -45,6 +45,11 @@ Behavior:
 - When the user asks about the fleet, call agents.status / agents.tail.
 - When asked about ideas, call ideas.list (filter by status / score).
 - When asked for details on an idea, call ideas.show with the id.
+- To REFINE an existing idea ("iterate on #63", "address the moat critique
+  on #58", "refine X with stronger behavior-change framing"), call
+  ideas.refine with the candidate_id and optional guidance. The refiner
+  re-proposes the idea targeting the worst critique and re-runs the
+  evaluator, returning the new score + verdict.
 - When asked about emerging trends, call trends.latest.
 - When asked to "run the process" / "give me ideas" / "fire the cycle",
   call agents.run with agent_id='weekly_ideation' (set n_candidates if

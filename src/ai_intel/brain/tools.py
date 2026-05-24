@@ -174,6 +174,59 @@ async def _h_ideas_show(engine, *, idea_id: int) -> dict[str, Any]:
     }
 
 
+async def _h_ideas_refine(
+    engine,
+    *,
+    candidate_id: int,
+    guidance: str = "",
+    auto_evaluate: bool = True,
+) -> dict[str, Any]:
+    """Refine an existing IdeaCandidate by re-proposing it with guidance.
+
+    Loads the existing candidate + its critique chain, iterates on the
+    angle to address the worst critique (or any user-supplied guidance),
+    writes a new IdeaCandidate row, and by default runs the evaluator
+    on the result so the score change is visible immediately. The new
+    candidate's ``_proposer_detail`` records ``refined_from_id`` linking
+    back to the parent.
+    """
+    from ai_intel.agents import AGENT_REGISTRY, evaluator
+
+    refiner_fn = AGENT_REGISTRY.get("refiner")
+    if refiner_fn is None:
+        return {"error": "refiner agent unavailable"}
+
+    result = await refiner_fn(engine, candidate_id=candidate_id, guidance=guidance)
+    if not isinstance(result, dict) or "output_pointer" not in result:
+        return {"error": (result or {}).get("summary", "refiner failed")}
+    try:
+        ptr = json.loads(result["output_pointer"])
+    except (json.JSONDecodeError, TypeError):
+        return {"error": "refiner output_pointer unparseable"}
+    new_id = ptr.get("new_idea_candidate_id")
+    if new_id is None:
+        return {"error": "refiner did not produce a new candidate"}
+
+    out: dict[str, Any] = {
+        "refined_from_id": candidate_id,
+        "new_idea_candidate_id": new_id,
+        "addressed_critique_from": ptr.get("addressed_critique_from"),
+        "summary": result.get("summary"),
+    }
+
+    if auto_evaluate:
+        eval_result = await evaluator(engine, candidate_ids=[new_id])
+        with Session(engine) as s:
+            new_cand = s.get(IdeaCandidate, new_id)
+        if new_cand is not None:
+            out["new_score"] = new_cand.evaluator_score
+            out["new_verdict"] = new_cand.evaluator_verdict
+        if isinstance(eval_result, dict):
+            out["evaluator_summary"] = eval_result.get("summary")
+
+    return out
+
+
 async def _h_trends_latest(
     engine, *, limit: int = 8,
 ) -> dict[str, Any]:
@@ -731,7 +784,7 @@ def build_registry() -> dict[str, Tool]:
             name="ideas.show",
             description=(
                 "Full critique chain for ONE candidate by id — "
-                "proposer's reasoning + all 6 persona subscores + "
+                "proposer's reasoning + all 9 persona subscores + "
                 "kill criterion. Use this when the user wants details "
                 "on a specific idea."
             ),
@@ -741,6 +794,47 @@ def build_registry() -> dict[str, Tool]:
                 "required": ["idea_id"],
             },
             handler=_h_ideas_show,
+        ),
+        "ideas.refine": Tool(
+            name="ideas.refine",
+            description=(
+                "Refine an existing IdeaCandidate by re-proposing it "
+                "with guidance. The refiner reads the original idea + "
+                "its critique chain, identifies the worst (lowest-"
+                "subscore) kill criterion, and iterates the angle to "
+                "address it while preserving founder-fit and the "
+                "billion-dollar-market thesis. Writes a NEW linked "
+                "IdeaCandidate (parent → child via refined_from_id) "
+                "and by default runs the evaluator on it so the score "
+                "change is visible immediately. Use when the user says "
+                "'refine #X', 'iterate on idea N with stronger Y', or "
+                "'address the moat critique on #M'."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "candidate_id": {"type": "integer"},
+                    "guidance": {
+                        "type": "string",
+                        "description": (
+                            "Optional user direction — e.g. 'stronger "
+                            "behavior-change framing' or 'address the "
+                            "moat critique with a data network effect'. "
+                            "If omitted the refiner targets the worst "
+                            "critique automatically."
+                        ),
+                    },
+                    "auto_evaluate": {
+                        "type": "boolean", "default": True,
+                        "description": (
+                            "Run the evaluator on the refined candidate so "
+                            "the new score is returned with the result."
+                        ),
+                    },
+                },
+                "required": ["candidate_id"],
+            },
+            handler=_h_ideas_refine,
         ),
         "trends.latest": Tool(
             name="trends.latest",

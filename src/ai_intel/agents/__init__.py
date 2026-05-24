@@ -27,6 +27,7 @@ from ai_intel.agents.observability import (
     summary_for_user,
 )
 from ai_intel.agents.proposer import proposer
+from ai_intel.agents.refiner import refiner
 from ai_intel.agents.runtime import (
     AuthMode,
     LLMResponse,
@@ -44,6 +45,7 @@ AGENT_REGISTRY = {
     "evaluator":       evaluator,
     "weekly_ideation": weekly_ideation,
     "navigator":       navigator,
+    "refiner":         refiner,
 }
 
 __all__ = [
@@ -62,4 +64,5 @@ __all__ = [
     "evaluator",
     "weekly_ideation",
     "navigator",
+    "refiner",
 ]
