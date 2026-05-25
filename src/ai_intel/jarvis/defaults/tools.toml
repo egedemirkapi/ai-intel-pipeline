@@ -72,6 +72,15 @@
 
 # ── Browser navigator (in-app automation) ────────────────────────────
 "browser.navigate"         = "allow"   # drive the browser to do a multi-step task
+"browser.download"         = "allow"   # navigator action: save a triggered file
+"browser.upload"           = "allow"   # navigator action: push files into a file input
+"journey.run"              = "allow"   # multi-step orchestrator above the navigator
+
+# ── OS / desktop (system-level changes — opt-in) ─────────────────────
+# Default deny: changing the wallpaper / volume / etc. modifies the
+# user's machine state. Flip to "allow" in ~/.jarvis/tools.toml to opt
+# in once, or approve from the queue when first requested.
+"os.set_wallpaper"         = "deny"
 
 # ── Google Workspace — Classroom read added ──────────────────────────
 "gworkspace.read_classroom" = "allow"

@@ -572,6 +572,52 @@ async def _h_browser_navigate(engine, *, task: str = "", url: str = "") -> dict[
     return result or {"summary": "(no result)"}
 
 
+async def _h_journey_run(engine, *, task: str = "", url: str = "") -> dict[str, Any]:
+    """Run a multi-step browser journey via the journey agent.
+
+    For tasks that span 2-6 macro-steps with state (typically files)
+    flowing between them — e.g. *"go to Classroom, download the
+    Chemistry exam materials, then create a NotebookLM notebook with
+    them"*. The journey agent decomposes the task, runs each substep
+    via the navigator inside a shared per-journey tmp dir for
+    downloads, and returns aggregate progress + the directory path.
+
+    Prefer this over ``browser.navigate`` whenever the request crosses
+    webapps or chains download→upload between sites — one navigator
+    invocation has a single step budget and cannot reliably plan
+    across distinct macro-tasks.
+    """
+    from ai_intel.agents import AGENT_REGISTRY
+
+    if not task:
+        return {"error": "no task given"}
+    fn = AGENT_REGISTRY.get("journey")
+    if fn is None:
+        return {"error": "journey agent unavailable"}
+    try:
+        result = await fn(engine, task=task, url=url)
+    except Exception as exc:  # noqa: BLE001 — surface to the chat LLM
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    return result or {"summary": "(no result)"}
+
+
+async def _h_os_wallpaper(engine, *, path: str = "") -> dict[str, Any]:
+    """Set the desktop wallpaper to the image at ``path`` (Windows only).
+
+    Delegates to the ``os.set_wallpaper`` workflow action, which calls
+    the Win32 ``SystemParametersInfoW`` API. Default capability is
+    DENY in tools.toml — the user opts in once via the approval queue
+    (a system change should be explicit). The action validates path
+    existence and image format up-front, so the API only fires on a
+    known-good input.
+    """
+    from ai_intel.workflows.actions.os import action_os_set_wallpaper
+
+    if not path:
+        return {"error": "no path given"}
+    return await action_os_set_wallpaper(engine, path=path)
+
+
 # ── Web research (live internet access) ──────────────────────────────
 _BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -761,6 +807,55 @@ def build_registry() -> dict[str, Tool]:
                 "required": ["task"],
             },
             handler=_h_browser_navigate,
+        ),
+        "journey.run": Tool(
+            name="journey.run",
+            description=(
+                "Run a multi-step browser journey — decompose a "
+                "high-level task into 2-6 substeps and execute each "
+                "via the navigator, with files threading between "
+                "substeps via a shared per-journey tmp dir. PREFER "
+                "this over browser.navigate whenever the task crosses "
+                "webapps or involves downloading then uploading files "
+                "— e.g. 'go to Classroom, find the Chemistry exam, "
+                "download the materials, and create a new NotebookLM "
+                "notebook with them'. Give a clear plain-language "
+                "`task`; pass `url` only if you know where substep 1 "
+                "should start."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "description": "The multi-step task, in plain language"},
+                    "url": {"type": "string", "description": "Optional starting URL hint"},
+                },
+                "required": ["task"],
+            },
+            handler=_h_journey_run,
+        ),
+        "os.set_wallpaper": Tool(
+            name="os.set_wallpaper",
+            description=(
+                "Set the Windows desktop wallpaper to the image at "
+                "`path`. The path must be absolute (or user-relative "
+                "with ~) and point to a supported image format "
+                "(.png, .jpg, .jpeg, .bmp, .webp, .tif, .tiff). "
+                "Default capability is DENY — the user opts in once "
+                "via the approval queue. Use when the user says 'set "
+                "my background to X', 'change my wallpaper to X', or "
+                "'use X as my desktop background'."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the image file",
+                    },
+                },
+                "required": ["path"],
+            },
+            handler=_h_os_wallpaper,
         ),
         "ideas.list": Tool(
             name="ideas.list",

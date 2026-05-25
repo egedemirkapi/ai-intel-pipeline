@@ -106,6 +106,28 @@ def test_top_news_excludes_corpus_sources(engine):
     assert [n["title"] for n in _top_news(engine, hours=48, limit=5)] == ["real news"]
 
 
+def test_top_news_filters_by_min_ai_relevance(engine):
+    """``min_ai_relevance`` excludes items below the threshold — the
+    ``routine`` workflow uses 0.6 so "run the routine" opens AI-sector
+    tabs, not whatever happens to be most recent."""
+    base = datetime.now(timezone.utc)
+    with Session(engine) as s:
+        s.add(_make_item("ai story",       ai_relevance=0.85,
+                         collected_at=base - timedelta(minutes=10)))
+        s.add(_make_item("generic story",  ai_relevance=0.30,
+                         collected_at=base - timedelta(minutes=5)))
+        s.add(_make_item("borderline",     ai_relevance=0.50,
+                         collected_at=base - timedelta(minutes=15)))
+        s.commit()
+    unfiltered = _top_news(engine, hours=48, limit=10, min_ai_relevance=0.0)
+    assert {n["title"] for n in unfiltered} == {"ai story", "generic story", "borderline"}
+    filtered = _top_news(engine, hours=48, limit=10, min_ai_relevance=0.6)
+    assert {n["title"] for n in filtered} == {"ai story"}
+    # Even at the same threshold, items exactly at the boundary are kept.
+    at_threshold = _top_news(engine, hours=48, limit=10, min_ai_relevance=0.5)
+    assert {n["title"] for n in at_threshold} == {"ai story", "borderline"}
+
+
 # ─── build_brief ────────────────────────────────────────────────────
 
 
