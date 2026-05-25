@@ -103,7 +103,7 @@ workflows:
           body: "{{ steps.0.summary }}"
 
   routine:
-    description: Open the study tabs and read the daily briefing
+    description: Open study tabs + top AI/tech news, then read the daily briefing
     trigger:
       button: true
       voice_phrases: ["run the routine", "run my routine", "start my routine", "the routine"]
@@ -115,10 +115,13 @@ workflows:
             - https://classroom.google.com
             - https://claude.ai
             - https://notebooklm.google.com
+      - news.open:
+          count: 5
+          min_ai_relevance: 0.6     # AI-sector filter — not just whatever's most recent
       - brief.compose: {}
       - notify:
           title: Your Briefing
-          body: "{{ steps.2.summary }}"
+          body: "{{ steps.3.summary }}"
 
   daily_trend_refresh:
     description: Run the synthesizer every morning to keep trend syntheses fresh so the idea-finder always reasons on up-to-date data

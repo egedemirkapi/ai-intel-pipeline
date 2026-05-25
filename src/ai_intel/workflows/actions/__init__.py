@@ -16,8 +16,10 @@ from ai_intel.workflows.actions.browser import action_browser_navigate
 from ai_intel.workflows.actions.calendar import action_calendar_check
 from ai_intel.workflows.actions.classroom import action_classroom_check
 from ai_intel.workflows.actions.gmail import action_email_check
+from ai_intel.workflows.actions.journey import action_journey_run
 from ai_intel.workflows.actions.news import action_news_email_digest, action_news_open
 from ai_intel.workflows.actions.notify import action_notify
+from ai_intel.workflows.actions.os import action_os_set_wallpaper
 from ai_intel.workflows.actions.speak import action_speak
 from ai_intel.workflows.actions.tabs import action_tabs_open_set
 
@@ -30,10 +32,12 @@ ACTION_REGISTRY = {
     "apps.launch":       action_apps_launch,
     "agent.run":         action_agent_run,
     "browser.navigate":  action_browser_navigate,
+    "journey.run":       action_journey_run,
     "classroom.check":   action_classroom_check,
     "calendar.check":    action_calendar_check,
     "email.check":       action_email_check,
     "brief.compose":     action_brief_compose,
+    "os.set_wallpaper":  action_os_set_wallpaper,
     "speak":             action_speak,
     "notify":            action_notify,
 }

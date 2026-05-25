@@ -16,12 +16,24 @@ from ai_intel.workflows.actions.tabs import action_tabs_open_set
 logger = logging.getLogger(__name__)
 
 
-async def action_news_open(engine, *, count: int = 5, hours: int = 48) -> dict:
+async def action_news_open(
+    engine,
+    *,
+    count: int = 5,
+    hours: int = 48,
+    min_ai_relevance: float = 0.0,
+) -> dict:
     """Open the ``count`` freshest tech-news articles as browser tabs.
 
     Args:
         count: how many articles to open (clamped to 1-10).
         hours: how far back "fresh" news is drawn from.
+        min_ai_relevance: filter to items scoring at least this on the
+            enrichment pipeline's AI-relevance scale (0.0-1.0). Default
+            0.0 = no filter (preserves the prior behavior). Use 0.5-0.7
+            for "AI sector only" — the bundled ``routine`` workflow
+            sets 0.6 so "run the routine" opens AI-relevant tabs rather
+            than whatever happens to be most recent.
 
     Returns the articles opened + a summary.
     """
@@ -30,7 +42,12 @@ async def action_news_open(engine, *, count: int = 5, hours: int = 48) -> dict:
     from ai_intel.think.brief import _top_news
 
     count = max(1, min(int(count or 5), 10))
-    news = _top_news(engine, hours=hours, limit=count)
+    news = _top_news(
+        engine,
+        hours=hours,
+        limit=count,
+        min_ai_relevance=float(min_ai_relevance or 0.0),
+    )
     articles = [
         {"title": n["title"], "url": n["url"]}
         for n in news if n.get("url")

@@ -44,11 +44,23 @@ def _fresh_counts(engine) -> dict:
     return {"last_hour": int(last_hour or 0), "today": int(today or 0)}
 
 
-def _top_news(engine, *, hours: int, limit: int) -> list[dict]:
+def _top_news(
+    engine,
+    *,
+    hours: int,
+    limit: int,
+    min_ai_relevance: float = 0.0,
+) -> list[dict]:
     """The freshest intel items collected in the last ``hours`` — newest
     first, so the brief visibly reflects what the collector just pulled.
     (Ranking by AI-relevance instead made the brief look frozen: the same
-    important story stayed on top for days even as new news arrived.)"""
+    important story stayed on top for days even as new news arrived.)
+
+    ``min_ai_relevance`` (default 0.0 — no filter) lets callers like the
+    routine's ``news.open`` step demand AI-sector items only. The
+    enrichment pipeline writes ``Item.ai_relevance`` in [0, 1]; 0.6 is
+    a sensible "definitely AI-sector" threshold.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     with Session(engine) as s:
         rows = list(s.exec(
@@ -56,6 +68,7 @@ def _top_news(engine, *, hours: int, limit: int) -> list[dict]:
             .where(Item.collected_at >= cutoff)
             .where(Item.source.not_in(_CORPUS_SOURCES))
             .where(Item.ai_relevance.is_not(None))  # noqa: E711
+            .where(Item.ai_relevance >= min_ai_relevance)
             .order_by(desc(Item.collected_at), desc(Item.ai_relevance))
             .limit(limit)
         ))
