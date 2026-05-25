@@ -16,6 +16,8 @@ Typical usage::
 from __future__ import annotations
 
 import logging
+import time
+from pathlib import Path
 from typing import Any
 
 from playwright.async_api import (
@@ -211,6 +213,100 @@ class BrowserSession:
             logger.debug("scroll(dy=%d)", dy)
         except Exception as exc:
             raise BrowserError(f"scroll({dy}) failed: {exc}") from exc
+
+    # ── File operations ──────────────────────────────────────────────────────
+    #
+    # These let the navigator (or a journey) actually pull files off pages
+    # like Google Classroom and push them into NotebookLM. ``download``
+    # captures the file triggered by clicking an element; ``upload`` handles
+    # both direct ``<input type="file">`` elements and click-to-open-picker
+    # buttons via Playwright's expect_file_chooser fallback.
+
+    async def download(
+        self,
+        index: int,
+        save_dir: Path | str,
+        *,
+        timeout_ms: int = 30_000,
+    ) -> Path:
+        """Click the element at *index* and save the resulting download.
+
+        Uses Playwright's ``expect_download`` context to capture the file
+        triggered by the click. Saves into ``save_dir/`` with the
+        browser-suggested filename (or a timestamped fallback if the
+        download exposes no name). Returns the absolute path of the
+        saved file so the journey orchestrator can pass it forward.
+
+        Raises ``BrowserError`` on timeout / element-mismatch / I/O failure.
+        """
+        handle = self._get_handle(index)
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        try:
+            async with self.page.expect_download(timeout=timeout_ms) as info:
+                await handle.click(timeout=10_000)
+            download = await info.value
+            suggested = (
+                download.suggested_filename
+                or f"download-{int(time.time())}.bin"
+            )
+            target = (save_path / suggested).resolve()
+            await download.save_as(target)
+            logger.debug("download(%d) → %s", index, target)
+            return target
+        except Exception as exc:
+            raise BrowserError(f"download({index}) failed: {exc}") from exc
+
+    async def upload(
+        self,
+        index: int,
+        file_paths: list[Path | str] | Path | str,
+        *,
+        timeout_ms: int = 10_000,
+    ) -> None:
+        """Upload files via the element at *index*.
+
+        Two paths, tried in order:
+
+        1. **Direct** — element is an ``<input type="file">``. Calls
+           ``handle.set_input_files(paths)``. This is the fast happy path
+           for plain file inputs.
+        2. **Picker fallback** — element is a button that opens a native
+           file picker. Wraps the click in ``page.expect_file_chooser()``
+           and resolves the picker with the same paths. Needed for sites
+           like NotebookLM where the visible "Add source" / "Upload"
+           control isn't itself the input.
+
+        Accepts a single path or a list. Paths are resolved to absolute
+        strings before handing to Playwright.
+        """
+        handle = self._get_handle(index)
+        if not isinstance(file_paths, list):
+            file_paths = [file_paths]
+        paths = [str(Path(p).resolve()) for p in file_paths]
+        if not paths:
+            raise BrowserError("upload() called with no files")
+        try:
+            # Try direct set_input_files first — works for <input type="file">.
+            try:
+                await handle.set_input_files(paths)
+                logger.debug("upload(%d) direct, %d files", index, len(paths))
+                return
+            except Exception as exc:
+                logger.debug(
+                    "upload(%d) direct set_input_files failed (%s); "
+                    "falling back to file-chooser", index, exc,
+                )
+            # Picker fallback: click the element and wait for a chooser.
+            async with self.page.expect_file_chooser(timeout=timeout_ms) as info:
+                await handle.click(timeout=5_000)
+            chooser = await info.value
+            await chooser.set_files(paths)
+            logger.debug(
+                "upload(%d) via picker, %d files", index, len(paths),
+            )
+        except Exception as exc:
+            raise BrowserError(f"upload({index}) failed: {exc}") from exc
 
     # ── Capture ──────────────────────────────────────────────────────────────
 
